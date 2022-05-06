@@ -1,0 +1,850 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+
+
+```{r}
+#Install packages
+
+install.packages("BiocManager")
+BiocManager::install("dada2", version = "3.11")
+
+install.packages("qiime2R")
+install.packages("tidyverse")
+install.packages("biomformat")
+install.packages('vegan')
+install.packages('readr')
+ 
+```
+
+```{r}
+#Load packages
+
+library("tidyverse")
+library("dada2")
+library("biomformat")
+library('vegan')
+library('readr')
+library("dplyr")     # To manipulate dataframes
+library("readxl")    # To read Excel files into R
+library("ggplot2")   # for high quality graphics
+library("BiocManager")
+library("phyloseq")   
+library("tidyr")
+library("data.table")
+```
+
+
+
+```{r}
+#Merging tables for species abundance 1
+#http://www.cookbook-r.com/Manipulating_data/Converting_data_between_wide_and_long_format/
+
+
+
+###read in SILVA biom-taxonomy for SILVA ####################################################
+
+taxonomy45 <- read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/V4V5/V4V5_SILVA_taxonomy.csv")
+taxonomy68 <- read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/V6V8/taxonomy_SILVA_V6V8.csv")
+
+head(taxonomy45)
+#make a data.table
+taxonomy45<-as.data.table(taxonomy45)
+taxonomy68<-as.data.table(taxonomy68)
+taxonomy45
+taxonomy68
+
+###read in otu table
+otu45<- read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/V4V5/V4V5__ASV_table.csv", header = T) #,row.names=1
+otu68<- read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/V6V8/V6V8__ASV_table.csv", header = T)
+head(otu45) 
+head(otu68)
+
+#Convert to long format
+otu_long45<-gather(otu45, Sample, Counts, "X122":"X83") #dashes got changed to dots for some reason
+otu_long68<-gather(otu68, Sample, Counts, "X122.o":"X83.o") #dashes got changed to dots for some reason
+
+#make a data. Table
+otu_long45<-as.data.table(otu_long45)
+otu_long68<-as.data.table(otu_long68)
+otu_long45
+otu_long68
+
+###read in metadata file
+metaD45<-read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/V4V5/metadata_16S_V4V5_jonesSound2019.txt", sep = "")
+metaD45<-as.data.table(metaD45)
+metaD45$Sample<-as.character(metaD45$Sample)
+metaD45
+
+metaD68<-read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/V6V8/metadata_16S_V6V8_jonesSound2019.txt", sep = "")
+metaD68<-as.data.table(metaD68)
+metaD68$Sample<-as.character(metaD68$Sample)
+metaD68
+
+
+# first set the keys to the common column:
+setkey(otu_long68,Sample)
+setkey(metaD68,Sample) 
+
+setkey(otu_long45,Sample)
+setkey(metaD45,Sample) 
+
+# join the tables
+total1_45 <- merge(otu_long45,metaD45,by="Sample")
+total1_45
+
+total1_68 <- merge(otu_long68,metaD68,by="Sample")
+total1_68
+
+#set key of total1_45 as the OTUID to join the taxonomy table
+setkey(total1_45,OTUID)
+setkey(taxonomy45,OTUID)
+
+setkey(total1_68,OTUID)
+setkey(taxonomy68,OTUID)
+
+#merge to big table
+total2_45 <- merge(total1_45,taxonomy45)
+setkey(total2_45, Sample)
+total2_45
+
+total2_68 <- merge(total1_68,taxonomy68)
+setkey(total2_68, Sample)
+total2_68
+
+#Final Joined table of SILVA
+all_joined_SILVA45 <- metaD45[total2_45]
+(all_joined_SILVA45)
+
+all_joined_SILVA68 <- metaD68[total2_68]
+(all_joined_SILVA68)
+
+
+
+
+# Join table for Greengenes ####################################
+
+#made above
+otu_long45
+otu_long68
+metaD45
+metaD68
+total1_45
+total1_68
+
+taxonomyGG45 <- read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/V4V5/taxonomy_greengenes_V4V5.csv")
+taxonomyGG68 <- read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/V6V8/taxonomy_greengenes_V6V8.csv")
+taxonomyGG45 <- as.data.table(taxonomyGG45)
+taxonomyGG68 <- as.data.table(taxonomyGG68)
+
+setkey(taxonomyGG68,OTUID)
+setkey(taxonomyGG45,OTUID)
+
+total2_GG45 <- merge(total1_45,taxonomyGG45)
+setkey(total2_GG45, Sample)
+total2_GG45
+
+total2_GG68 <- merge(total1_68,taxonomyGG68)
+setkey(total2_GG68, Sample)
+total2_GG68
+
+#Final Joined table of GreenGenes
+all_joined_GG45 <- metaD45[total2_GG45]
+(all_joined_GG45)
+
+all_joined_GG68 <- metaD68[total2_GG68]
+(all_joined_GG68)
+
+
+
+
+
+# Join table for RDP ####################################
+
+#made above
+otu_long45
+otu_long68
+metaD45
+metaD68
+total1_45
+total1_68
+
+taxonomyRDP45 <- read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/V4V5/taxonomy_RDP_V4V5.csv")
+taxonomyRDP68 <- read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/V6V8/taxonomy_RDP_V6V8.csv")
+taxonomyRDP45 <- as.data.table(taxonomyRDP45)
+taxonomyRDP68 <- as.data.table(taxonomyRDP68)
+
+setkey(taxonomyRDP68,OTUID)
+setkey(taxonomyRDP45,OTUID)
+
+total2_RDP45 <- merge(total1_45,taxonomyRDP45)
+setkey(total2_RDP45, Sample)
+total2_RDP45
+
+total2_RDP68 <- merge(total1_68,taxonomyRDP68)
+setkey(total2_RDP68, Sample)
+total2_RDP68
+
+#Final Joined table of GreenGenes
+all_joined_RDP45 <- metaD45[total2_RDP45]
+(all_joined_RDP45)
+
+all_joined_RDP68 <- metaD68[total2_RDP68]
+(all_joined_RDP68)
+
+
+
+
+```
+
+
+```{r}
+
+#####Proportion plot for each sample with both primer, based on phylum (?) ######
+p45 <- ggplot(all_joined_SILVA45, aes(x = Counts, y = Sample, fill = Phylum)) + geom_bar(position = "fill", stat = "identity")
+ggplot(otu_longN, aes(fill=Counts, y=1, x=1)) + 
+    geom_bar(position="fill", stat="identity") + expand_limits(y = 9000000, x=-9999999)  # or some other arbitrarily large number
+p45
+
+
+p68 <- ggplot(all_joined_SILVA68, aes(x = Counts, y = Sample, fill = Phylum)) + geom_bar(position = "fill", stat = "identity")
+ggplot(otu_longN, aes(fill=Counts, y=1, x=1)) + 
+    geom_bar(position="fill", stat="identity") + expand_limits(y = 9000000, x=-9999999)  # or some other arbitrarily large number
+p68
+  
+```
+
+
+
+```{r}
+  
+######TABLE 1: table of prevalence of bacterial counts according to each primer#####
+#bacteria on x, count on y, two different graphs or two coloured bars on each graph
+
+otu_tax_45 <- merge(otu_long45,taxonomy45,by="OTUID")
+otu_tax_45
+
+otu_tax_68 <- merge(otu_long68,taxonomy68,by="OTUID")
+otu_tax_68
+
+# Basic barplot
+p<-ggplot(data = otu_tax_45, aes(y=Phylum, x=Counts/1000)) +
+  geom_bar(stat="identity",position = position_dodge(width=1.5))
+p
+
+
+plot2 <- ggplot(NULL, aes(y=Phylum, x=Counts/1000)) + 
+      geom_bar(data = otu_tax_45, stat = "identity", colour="red",width=0.4, position = position_dodge(width=0.5)) +
+      geom_bar(data = otu_tax_68, stat = "identity", colour="blue",width=0.4, position = position_dodge(width=0.5))
+plot2
+```
+
+
+```{r}
+#Find top 20 most abundant orders:
+
+taxonomy45
+taxonomy68
+all_joined_SILVA45
+all_joined_SILVA68
+
+#Sort out the counts of Orders
+orderCount45<- as.data.table(table(all_joined_SILVA45$Order)) #count by Order.
+orderCount45<- orderCount45[order(orderCount45$N)]
+orderCount45 #V1 is the Order name, N is the count.
+
+orderCount68<- as.data.table(table(all_joined_SILVA68$Order)) #count by Order.
+orderCount68<- orderCount68[order(orderCount68$N)]
+orderCount68 #V1 is the Order name, N is the count.
+
+#Get top Orders
+topTaxa45 <- slice_tail(orderCount45, n=20) #get the bottom 20 counts (it's by ascending order)
+topTaxa45
+
+topTaxa68 <- slice_tail(orderCount68,n=20)
+topTaxa68
+
+p<-ggplot(topTaxa45, aes(x=N, y=V1)) +
+  geom_bar(stat="identity") +
+  theme_light()
+p
+
+p<-ggplot(topTaxa68, aes(x=N, y=V1)) +
+  geom_bar(stat="identity") +
+  theme_light()
+p
+
+```
+
+
+```{r}
+#TABLE 3: no of sequences associated with chloroplasts per primer
+
+all_joined_SILVA45
+all_joined_SILVA68
+
+### V4V5 ###
+orderCount45<- select(all_joined_SILVA45, Order, Counts) #count by Order.
+orderCount45<- orderCount45[order(orderCount45$Counts)]
+
+chloroTable45 <- filter(orderCount45, Order == "Chloroplast") #Select only rows that are chloroplasts
+chloroSum45 <- sum(chloroTable45$Counts)
+chloroSum45 #this is the number of sequences associated with chloroplasts by V4V5
+
+### V6V8 ###
+orderCount68<- select(all_joined_SILVA68, Order, Counts) #count by Order.
+orderCount68<- orderCount68[order(orderCount68$Counts)]
+
+chloroTable68 <- filter(orderCount68, Order == "Chloroplast") #Select only rows that are chloroplasts
+chloroSum68 <- sum(chloroTable68$Counts)
+chloroSum68 #this is the number of sequences associated with chloroplasts by V4V5
+
+
+
+```
+```{r}
+#FIGURE 7: taxonomic panel delineating top 20 (if there are top 20) chloroplast orders per primer and database
+
+### V4V5 ###
+orderCount45<- select(all_joined_SILVA45, Order, Class, Counts) #count and Order.
+orderCount45<- orderCount45[order(orderCount45$Counts)] #sort by count
+chloroTable45 <- filter(orderCount45, Order == "Chloroplast") #Select only rows that are chloroplasts
+tail(chloroTable45,20) #top 20 counts.
+
+### V6V8 ###
+orderCount68<- select(all_joined_SILVA68, Order, Counts) #count by Order.
+orderCount68<- orderCount68[order(orderCount68$Counts)]
+chloroTable68 <- filter(orderCount68, Order == "Chloroplast") #Select only rows that are chloroplasts
+tail(chloroTable68,20) #top 20 counts.
+
+#What are the order names?? They're all just called "chloroplast".
+
+```
+
+
+
+
+```{r}
+#TODO
+#Counts of archaea members SILVA
+
+#Database like commands for tables!!!
+#https://stackoverflow.com/questions/12353820/sort-rows-in-data-table-in-decreasing-order-on-string-key-order-x-v-gives-er
+
+#For V4V5
+all_joined_SILVA45
+sortTable45 <- all_joined_SILVA45[order(rank(Kingdom),Phylum)] #sort by kingdom name
+Archaeas45 <- filter(sortTable45, Kingdom == "Archaea") #Select only rows where Kingdom is Archaea.
+Archaeas45
+
+#Simple bar graph
+archPerSample45 <-ggplot(Archaeas, aes(x=Counts, y=Sample)) +
+  geom_bar(stat="identity") +
+  theme_light()
+archPerSample45
+
+
+#For V6V8
+all_joined_SILVA68
+sortTable68 <- all_joined_SILVA68[order(rank(Kingdom),Phylum)] #sort by kingdom name
+Archaeas68 <- filter(sortTable68, Kingdom == "Archaea") #Select only rows where Kingdom is Archaea.
+Archaeas68
+
+#Simple bar graph
+archPerSample68 <-ggplot(Archaeas68, aes(x=Counts, y=Sample)) +
+  geom_bar(stat="identity") +
+  theme_light()
+archPerSample68
+```
+
+```{r}
+# taxonomic barplot panel demonstrating top 20 archaeal orders for each database
+
+#V4V5 tables
+SILVA_table45 <- all_joined_SILVA45[order(rank(Kingdom),Phylum)] #sort by kingdom name
+arcOnly_S45 <- filter(SILVA_table45, Kingdom == "Archaea") #Select only rows where Kingdom is Archaea.
+RDP_table45 <- all_joined_RDP45[order(rank(Kingdom),Phylum)] #sort by kingdom name
+arcOnly_R45 <- filter(RDP_table45, Kingdom == "Archaea") #Select only rows where Kingdom is Archaea.
+RDP_table45
+arcOnly_S45
+
+#V6V8 tables
+SILVA_table68 <- all_joined_SILVA68[order(rank(Kingdom),Phylum)] #sort by kingdom name
+arcOnly_S68 <- filter(SILVA_table68, Kingdom == "Archaea") #Select only rows where Kingdom is Archaea.
+RDP_table68 <- all_joined_RDP68[order(rank(Kingdom),Phylum)] #sort by kingdom name
+arcOnly_R68 <- filter(RDP_table68, Kingdom == "Bacteria") #Select only rows where Kingdom is Archaea.
+
+'''
+#only look at orders of Archaea
+arcOnly45 <- filter(SILVA_table45, Kingdom == "Archaea") #Select only rows where Kingdom is Archaea.
+arcSort45 <- arcOnly45[order(rank(Counts),Order)] #sort by kingdom name
+arcSort45
+arcTop20_45 <- slice_tail(arcSort45, n=20) #get the bottom 20 counts (its by ascending order)
+arcTop20_45
+
+#V6V8
+arcOnly68 <- filter(SILVA_table68, Kingdom == "Archaea") #Select only rows where Kingdom is Archaea.
+arcSort68 <- arcOnly68[order(rank(Counts),Order)] #sort by kingdom name
+arcSort68
+arcTop20_68 <- slice_tail(arcSort68, n=20) #get the bottom 20 counts (its by ascending order)
+arcTop20_68
+'''
+#dealing with dupes and distinct values:
+#https://www.datanovia.com/en/lessons/identify-and-remove-duplicate-data-in-r/
+#summing
+#https://stackoverflow.com/questions/9676212/how-to-sum-data-frame-column-values
+
+
+#V4V5 ###################
+
+#SILVA ###
+archSubset_S45 <- select(arcOnly45, Order) #Only get the names of the orders
+archDistinct_S45 <- distinct(archSubset_S45) #Removes duplicates. Now it's a list of distinct orders.
+archDistinct_S45
+
+orderNames_S45 <- c("Lokiarchaeia","Bathyarchaeia","Thermoplasmata","Halobacteria","Woesearchaeia","Nanohaloarchaeia","Nitrososphaeria","Marine Benthic Group A")
+orderSums_S45 <- c() #sums of each of the orders
+
+#loop to find the sums of each order and add to the vector
+for (oName in orderNames_S45) {
+  curOrderTable <- filter(SILVA_table45, Order == oName) #Select only rows with the current order name from the full table
+  curOrderTable <- select(curOrderTable, Order, Counts) #makes a sub table of only the current table's order name and counts
+  
+  curOrderSum <- sum(curOrderTable$Counts) #sums all the counts of that order
+  orderSums_S45 <- c(orderSums_S45, curOrderSum) 
+}
+(orderSums_S45)
+
+orderDataFrame_S45 <- data.frame(orderNames_S45, orderSums_S45)
+orderDataFrame_S45
+
+topArchGraph_S45 <-ggplot(orderDataFrame_S45, aes(x=orderSums_S45, y=orderNames_S45)) +
+  geom_bar(stat="identity") +
+  theme_light()
+topArchGraph_S45
+
+
+#RDP ### THERE ARE NO ARCHAEA??
+archSubset_R45 <- select(arcOnly_R45, Order) #Only get the names of the orders
+archDistinct_R45 <- distinct(archSubset_R45) #Removes duplicates. Now it's a list of distinct orders.
+archDistinct_R45
+
+orderNames_R45 <-c() #There are no archaea from the RDP database...?
+orderSums_R45 <- c() #sums of each of the orders
+
+#loop to find the sums of each order and add to the vector
+for (oName in orderNames_R45) {
+  curOrderTable <- filter(RDP_table45, Order == oName) #Select only rows with the current order name from the full table
+  curOrderTable <- select(curOrderTable, Order, Counts) #makes a sub table of only the current table's order name and counts
+  
+  curOrderSum <- sum(curOrderTable$Counts) #sums all the counts of that order
+  orderSums_R45 <- c(orderSums_S45, curOrderSum) 
+}
+(orderSums_R45)
+
+orderDataFrame_R45 <- data.frame(orderNames_R45, orderSums_R45)
+orderDataFrame_R45
+
+topArchGraph_S45 <-ggplot(orderDataFrame_S45, aes(x=orderSums_S45, y=orderNames_S45)) +
+  geom_bar(stat="identity") +
+  theme_light()
+topArchGraph_S45
+
+
+
+
+
+
+
+
+
+#V6V8 ###################
+
+#SILVA ###
+archSubset <- select(arcOnly68, Order) #Only get the names of the orders
+archDistinct <- distinct(archSubset) #Removes duplicates. Now it's a list of distinct orders.
+archDistinct
+
+orderNames_S68 <- c("Nitrosopumilales")
+orderSums_S68 <- c() #sums of each of the orders
+
+#loop to find the sums of each order and add to the vector
+for (oName in orderNames_S68) {
+  curOrderTable <- filter(SILVA_table68, Order == oName) #Select only rows with the current order name from the full table
+  curOrderTable <- select(curOrderTable, Order, Counts) #makes a sub table of only the current table's order name and counts
+  
+  curOrderSum <- sum(curOrderTable$Counts) #sums all the counts of that order
+  orderSums_S68 <- c(orderSums_S68, curOrderSum) 
+}
+(orderSums_S68)
+
+orderDataFrame_S68 <- data.frame(orderNames_S68, orderSums_S68)
+orderDataFrame_S68
+
+topArchGraph_S68 <-ggplot(orderDataFrame_S68, aes(x=orderSums_S68, y=orderNames_S68)) +
+  geom_bar(stat="identity") +
+  theme_light()
+topArchGraph_S68
+
+
+#There is no archaea is RDP of V6V8
+
+```
+
+```{r}
+#TODO
+#Phyloseq to get alpha diversity
+library(phyloseq)
+
+otu_mat<- read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/V4V5/V4V5__ASV_table.csv", header = T, row.names = 1) #,row.names=1
+tax_mat <-  read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/V4V5/V4V5_SILVA_taxonomy.csv", header = T, row.names = 1)
+samples_df<-read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/V4V5/metadata_16S_V4V5_jonesSound2019.txt", sep = "")
+
+head(tax_mat)
+head(otu_mat)
+
+#assign row names
+row.names(otu_mat) <- otu_mat$OTUID
+#row.names(tax_mat) <- tax_mat$OTUID
+#row.names(samples_df) <- samples_df$Site
+
+#Transform into matrixes otu and tax tables (sample table can be left as data frame)
+otu_mat <- as.matrix(otu_mat)
+#tax_mat <- as.matrix(tax_mat)
+
+class(tax_mat)
+
+#Transform to phyloseq objects
+class(otu_mat) <- "numeric" #NEED to convert to numeric in this way. Have to run whole chunk.
+
+OTU = otu_table(otu_mat, taxa_are_rows = TRUE)
+TAX = tax_table(tax_mat)
+samples = sample_data(samples_df)
+
+head(OTU)
+head(TAX)
+
+#taxa_names(OTU)
+sample_names(OTU)
+sample_names(TAX)
+
+taxa_names(OTU)
+taxa_names(TAX)
+
+#Convert phyloseq
+Perma <- phyloseq(OTU, TAX, samples)
+Perma
+
+
+
+
+
+
+```
+
+```{r}
+#Making Bubble plots (TODO)
+
+#V4V5 -----------------------------------------------------------------------------------------------------------------
+
+###read in otu table of V4V5
+otu45<- read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/V4V5/V4V5__ASV_table.csv") #,row.names=1
+head(otu45) 
+#Convert to long format
+otu_long45<-gather(otu45, Sample, Counts, "X122":"X83") #dashes got changed to dots for some reason
+#make a data. Table
+otu_long45<-as.data.table(otu_long45)
+otu_long45
+
+###read in V4V5_SILVA_taxonomy.csv
+taxonomy45 <- read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/V4V5/V4V5_SILVA_taxonomy.csv")
+head(taxonomy45)
+#make a data.table
+taxonomy45<-as.data.table(taxonomy45)
+taxonomy45
+
+###read in metadata file
+metaD45<-read.csv2("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/V4V5/metadata_16S_V4V5_jonesSound2019.txt")
+metaD45<-as.data.table(metaD45)
+head(metaD45)
+
+
+write.csv(otu_long45, "G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/V4V5/for_plot45.csv")
+#remove 0s
+for_plot45 <- filter(otu_long45, Counts!= 0)
+#for relative abundance:
+#change "Name" for the name of your column with group description
+for_plot45$type<-as.factor(for_plot45$type)
+#order
+for_plot45$type<-factor(for_plot45$type, levels=c( "river", "natural biofilm", "artificial biofilm"))
+#Now order your x axis (site names) <-- edit accordingly.
+for_plot45$Site <- factor(for_plot45$Site, levels = c( "Sif_1","SI_2","SI_3", "S4_1", "Big_1", "BH_2", "BH_3", "Ram_1","RAM_3", "Bapt_1", "BP_2", "BP_3", "Nord_1", "N_2", "N_3", "Rose_1", "RMS_1", "RMS_2", "RM_3", "MM_1", "Mod_1", "MM_2", "MM_3", "TM_1", "T_2", "SM_2", "White_1", "WM_2", "WM_3", "GM_1", "Sturg_1", "ST_2", "Verm_1", "VM_1", "VA_1", "VM_2", "VM_3", "V3_1"))
+
+#sweet- now plot (note that this is for raw counts; change for relative abundance)
+theme_set(theme_bw())
+col=c( "green","orange", "purple")## <- change accordingly, if desired-- see http://www.stat.columbia.edu/~tzheng/files/Rcolor.pdf
+g <- ggplot(for_plot45, aes(x=Sample, y=Sample)) 
+g + geom_point(aes(size=Counts)) +
+  scale_colour_manual(values=col)+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size=9))+
+  theme(axis.text.y = element_text( size=9))+
+  theme(axis.title.x=element_text(size=12))+
+  theme(axis.title.y=element_text(size=12))
+#export both bubble plots as PDF.
+
+
+#V6V8 -----------------------------------------------------------------------------------------------------------------
+
+###read in otu table of V6V8 
+otu68<- read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/V6V8/V6V8__ASV_table.csv") #,row.names=1
+head(otu68) 
+#Convert to long format
+otu_long68<-gather(otu68, Sample, Counts, "X122.o":"X83.o") #dashes got changed to dots for some reason
+#make a data. Table
+otu_long68<-as.data.table(otu_long68)
+otu_long68
+
+###read in biom-taxonomy
+taxonomy68 <- read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/V6V8/taxonomy_SILVA_V6V8.csv")
+head(taxonomy68)
+#make a data.table
+taxonomy<-as.data.table(taxonomy68)
+taxonomy68
+
+###read in metadata file
+metaD68<-read.csv2("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/V6V8/metadata_16S_V6V8_jonesSound2019C.csv") 
+metaD68<-as.data.table(metaD68)
+head(metaD68)
+
+
+
+write.csv(otu_long68,"G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/V6V8/for_plot68.csv")
+v68 <- read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/V6V8/for_plot68.csv")
+v68
+
+#remove 0s
+for_plot68 <- filter(otu_long68, Counts!= 0)
+#for relative abundance:
+#change "Name" for the name of your column with group description
+for_plot68$type<-as.factor(for_plot68$type)
+#order
+for_plot68$type<-factor(for_plot68$type, levels=c( "river", "natural biofilm", "artificial biofilm"))
+#Now order your x axis (site names) <-- edit accordingly.
+for_plot68$Site <- factor(for_plot68$Site, levels = c( "Sif_1","SI_2","SI_3", "S4_1", "Big_1", "BH_2", "BH_3", "Ram_1","RAM_3", "Bapt_1", "BP_2", "BP_3", "Nord_1", "N_2", "N_3", "Rose_1", "RMS_1", "RMS_2", "RM_3", "MM_1", "Mod_1", "MM_2", "MM_3", "TM_1", "T_2", "SM_2", "White_1", "WM_2", "WM_3", "GM_1", "Sturg_1", "ST_2", "Verm_1", "VM_1", "VA_1", "VM_2", "VM_3", "V3_1"))
+
+#sweet- now plot (note that this is for raw counts; change for relative abundance)
+theme_set(theme_bw())
+col=c( "green","orange", "purple")## <- change accordingly, if desired-- see http://www.stat.columbia.edu/~tzheng/files/Rcolor.pdf
+g <- ggplot(for_plot68, aes(x=Sample, y=Sample))#colour=type
+g + geom_point(aes(size=Counts)) +
+  scale_colour_manual(values=col)+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size=9))+
+  theme(axis.text.y = element_text( size=9))+
+  theme(axis.title.x=element_text(size=12))+
+  theme(axis.title.y=element_text(size=12))
+#export both bubble plots as PDF.
+```
+
+```{r}
+#NMDS
+#example with randomized table from https://jonlefcheck.net/2012/10/24/nmds-tutorial-in-r/
+
+#on my data:
+otu_og3<- read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/both_ASV_tables3.csv", row.names = 1) #Now with the real data
+
+otu_og3
+ncol(otu_og3)
+head(otu_og3)
+
+otu <- t(otu_og3) #transpose
+class(otu)
+nrow(otu)
+#head(otu)
+
+rownames(otu)
+
+#set grouping info
+grouping_info <- data.frame(row.names=(rownames(otu)),t(as.data.frame(strsplit(rownames(otu),"_"))))
+class(grouping_info)
+grouping_info
+
+#class(otu)<-("numeric") #needed when row names weren't removed
+otu_trim <- na.omit(otu) #trim extra missing data as per https://stat.ethz.ch/pipermail/r-help//2013-May/353210.html
+nrow(otu_trim)
+
+my_NMDS<-metaMDS(otu,distance = "bray", k = 2, trymax = 50)
+
+#View NMDS straight, check correctness
+my_NMDS
+stressplot(my_NMDS)
+plot(my_NMDS)
+nrow(my_NMDS$points)
+
+#extract NMDS scores (x and y coordinates)
+data.scores = as.data.frame(scores(my_NMDS))
+colnames(data.scores)
+
+ncol(grouping_info)
+
+#metaMDS documentation full: https://www.rdocumentation.org/packages/vegan/versions/1.15-1/topics/metaMDS
+#framing the NMDS data
+NMDS=data.frame(x=my_NMDS$point[,1],y=my_NMDS$point[,2]) #Only uses point data (rest is not relevant in this case).
+
+
+#Lists are columns of the metadata table for V4V5. Used for making the NMDS table
+
+SampleNameV4V5<-c("3_S51","5_S21","6_S53","8_S54","14_S124","16_S90","20_S47","23_S88","25_S38","29_S85","31_S91","32_S89","33_S86","37_S78","39_S33","43_S34","46_S79","48_S80","56_S77","57_S67","65_S69","75_S25","81_S70","83_S28","122_S127","155_S104","157_S119")
+SampleNameV6V8<-c("c3-o_S16","5-o_S16","6-o_S19","8-o_S4","14-o_S63","16-o_S18","20-o_S64","23-o_S65","25-o_S57","29-o_S7","31-o_S20","32-o_S5","33-o_S6","37-o_S61","39-o_S11","43-o_S10","46-o_S60","48-o_S59","56-o_S8","57-o_S62","65-o_S14","75-o_S58","81-o_S66","83-o_S13","122-o_S17","155-o_S3","157-o_S15")
+SampleName <- c(SampleNameV4V5,SampleNameV6V8) #combine the two vectors from V4V5 and V6V8
+
+
+TransectV4V5<-c("Sverdrup_distal","Fram_Fiord","Sverdrup_distal","Sverdrup_distal","Fram_Fiord","Sverdrup_distal","Sverdrup_glacier","Sverdrup_glacier","Sverdrup_glacier_repeat","Sverdrup_glacier","Sverdrup_distal","Sverdrup_glacier","Sverdrup_glacier","Sverdrup_glacier","Belcher_4","Belcher_4","Sverdrup_glacier","Sverdrup_glacier","Belcher_4","Jakeman_4","Jakeman_5","Fram_Fiord","Jakeman_5","Belcher_1","Subglacial","Sydkap_3","Grise_Fiord_2")
+TransectV6V8<-c("Sverdrup_distal","Fram_Fiord","Sverdrup_distal","Sverdrup_distal","Fram_Fiord","Sverdrup_distal","Sverdrup_glacier","Sverdrup_glacier","Sverdrup_glacier_repeat","Sverdrup_glacier","Sverdrup_distal","Sverdrup_glacier","Sverdrup_glacier","Sverdrup_glacier","Belcher_4","Belcher_4","Sverdrup_glacier","Sverdrup_glacier","Belcher_4","Jakeman_4","Jakeman_5","Fram_Fiord","Jakeman_5","Belcher_1","Subglacial","Sydkap_3","Grise_Fiord_2")
+Transect <- c(TransectV4V5,TransectV6V8)
+
+DepthV4V5<-c("15", "5", "50", "200", "10", "125","47", "40", "17","4", "350", "67","12", "7", "5", "20", "20", "115", "140", "5", "5", "0", "27", "95", "112", "7", "145")
+DepthV6V8<-c("15", "5", "50", "200", "10", "125","47", "40", "17","4", "350", "67","12", "7", "5", "20", "20", "115", "140", "5", "5", "0", "27", "95", "112", "7", "145")
+Depth <- c(DepthV4V5,DepthV6V8)
+
+StationV4V5<- c("VIO_33","VIO_2","VIO_33","VIO_33","VIO_2","VIO_32","VIO_30","VIO_31","VIO_24","VIO_28","VIO_32","VIO_31","VIO_28","VIO_22","VIO_13","VIO_13","VIO_22","VIO_22","VIO_13","VIO_6","VIO_7","VIO_9","VIO_7","VIO_10","Glacial_sample","VIO_39","VIO_44")
+StationV6V8<- c("VIO_33","VIO_2","VIO_33","VIO_33","VIO_2","VIO_32","VIO_30","VIO_31","VIO_24","VIO_28","VIO_32","VIO_31","VIO_28","VIO_22","VIO_13","VIO_13","VIO_22","VIO_22","VIO_13","VIO_6","VIO_7","VIO_9","VIO_7","VIO_10","Glacial_sample","VIO_39","VIO_44")
+Station <- c(StationV4V5,StationV6V8)
+
+IDV4V5<-c("3","5","6","8","14","16","20","23","25","29","31","32","33","37","39","43","46","48","56","57","65","75","81","83","122","155","157")
+IDV6V8<-c("3-o","5-o","6-o","8-o","14-o","16-o","20-o","23-o","25-o","29-o","31-o","32-o","33-o","37-o","39-o","43-o","46-o","48-o","56-o","57-o","65-o","75-o","
+81-o","83-o","122-o","155-o","157-o")
+ID <- c(IDV4V5,IDV6V8)
+
+Primer <- c("V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8")
+
+
+#add this to your NMDS data frame as a new column
+NMDS$ID<-ID
+NMDS$SampleName<-SampleName
+NMDS$Transect<-Transect
+NMDS$Depth<-Depth
+NMDS$Station<-Station
+NMDS$Primer<-Primer
+
+#order your Group column according what you would like, here for example, according to  ID number:
+NMDS$ID<-factor(NMDS$ID, levels=ID)
+
+NMDS #This is a dataframe that has the metadata manually merged into it, as well as the X and Y values from the NMDS analysis. This is what is used to create the plot.
+
+#Graphing NMDS
+#Graph with all trimmings
+library(ggplot2)
+
+xx = ggplot(NMDS, aes(x = x, y = y)) + 
+    geom_point(aes(size = as.numeric(Depth), shape = Primer, colour = Transect))+
+  
+    theme(axis.text.y = element_text(colour = "black", size = 12, face = "bold"), 
+    axis.text.x = element_text(colour = "black", face = "bold", size = 12), 
+    legend.text = element_text(size = 12, face ="bold", colour ="black"), 
+    legend.position = "right", axis.title.y = element_text(face = "bold", size = 14), 
+    axis.title.x = element_text(face = "bold", size = 14, colour = "black"), 
+    legend.title = element_text(size = 14, colour = "black", face = "bold"), 
+    panel.background = element_blank(), panel.border = element_rect(colour = "black", fill = NA, size = 1.2),
+    legend.key=element_blank()) + 
+    labs(x = "x", colour = "Transect", y = "y", shape = "Primer")  
+ 
+xx
+
+
+primer_only = ggplot(NMDS, aes(x = x, y = y)) + 
+    ggtitle("NMDS of samples compared by primer")+
+    geom_point(aes(colour = Primer), size = 3)+
+    geom_point(shape = 1,size = 3,colour = "black")+
+    geom_text(aes(label=ID),hjust=1.25, vjust=1.25,size=2.5)+
+
+  
+    theme(axis.text.y = element_text(colour = "black", size = 12, face = "bold"), 
+    axis.text.x = element_text(colour = "black", face = "bold", size = 12), 
+    legend.text = element_text(size = 12, face ="bold", colour ="black"), 
+    legend.position = "right", axis.title.y = element_text(face = "bold", size = 14), 
+    axis.title.x = element_text(face = "bold", size = 14, colour = "black"), 
+    legend.title = element_text(size = 14, colour = "black", face = "bold"), 
+    panel.background = element_blank(), panel.border = element_rect(colour = "black", fill = NA, size = 1.2),
+    legend.key=element_blank()) + 
+    labs(x = "x", y = "y", colour = "Primer")  
+ 
+primer_only
+
+
+```
+
+```{r}
+#Data processing with Pyloseq:https://vaulot.github.io/tutorials/Phyloseq_tutorial.html
+
+
+otu_mat <-read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Example_Content/all_OTU_NMDSnu.csv", row.names=1) 
+tax_mat <- read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Example_Content/biom-taxonomy.csv", row.names=1)
+samples_df  <- as.data.frame(read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Example_Content/all_OTU_NMDS.csv"))
+
+head(otu_mat)
+head(samples_df)
+
+#assign row names
+row.names(otu_mat) <- otu_mat$OTUID
+row.names(tax_mat) <- tax_mat$OTUID
+row.names(samples_df) <- samples_df$Site
+
+#Transform into matrixes otu and tax tables (sample table can be left as data frame)
+otu_mat <- as.matrix(otu_mat)
+tax_mat <- as.matrix(tax_mat)
+
+class(otu_mat)
+
+#Transform to phyloseq objects
+class(otu_mat) <- "numeric" #NEED to convert to numeric in this way. Have to run whole chunk.
+
+OTU = otu_table(otu_mat, taxa_are_rows = TRUE)
+TAX = tax_table(a)
+samples = sample_data(samples_df)
+
+nrow(OTU)
+nrow(TAX)
+nrow(samples)
+
+#Convert phyloseq
+Perma <- phyloseq(OTU, TAX, samples)
+Perma
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

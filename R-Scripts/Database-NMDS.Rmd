@@ -1,0 +1,725 @@
+---
+title: "Database NMDS"
+output: html_notebook
+---
+```{r}
+#Load packages
+
+library("tidyverse")
+library("dada2")
+library("biomformat")
+library('vegan')
+library('readr')
+library("dplyr")     # To manipulate dataframes
+library("readxl")    # To read Excel files into R
+library("ggplot2")   # for high quality graphics
+library("BiocManager")
+library("phyloseq")   
+library("tidyr")
+library("data.table")
+#install.packages("ggdendro")
+library("ggdendro")
+library(dendextend)
+
+install.packages("wesanderson")
+library(wesanderson)
+library(viridis)
+library(RColorBrewer)
+library(ggsci)
+```
+
+```{r}
+#Load in Data, merge tables
+
+###read in biom-taxonomy for SILVA ####################################################
+
+#SILVA
+taxonomy45_SILVA <- read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/V4V5/V4V5_SILVA_taxonomy.csv")
+taxonomy68_SILVA <- read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/V6V8/taxonomy_SILVA_V6V8.csv")
+
+#RDP
+taxonomy45_RDP <- read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/V4V5/taxonomy_RDP_V4V5.csv")
+taxonomy68_RDP <- read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/V6V8/taxonomy_RDP_V6V8.csv")
+
+#GreenGenes
+taxonomy45_GG <- read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/V4V5/taxonomy_greengenes_V4V5.csv")
+taxonomy68_GG <- read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/V6V8/taxonomy_greengenes_V6V8.csv")
+
+taxonomy45_SILVA<-as.data.table(taxonomy45_SILVA)
+taxonomy68_SILVA<-as.data.table(taxonomy68_SILVA)
+taxonomy45_RDP<-as.data.table(taxonomy45_RDP)
+taxonomy68_RDP<-as.data.table(taxonomy68_RDP)
+taxonomy45_GG<-as.data.table(taxonomy45_GG)
+taxonomy68_GG<-as.data.table(taxonomy68_GG)
+
+
+###read in otu tables #################################################################
+
+otu45<- read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/V4V5/V4V5__ASV_table.csv", header = T) #,row.names=1
+otu68<- read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/V6V8/V6V8__ASV_table.csv", header = T)
+head(otu45) 
+head(otu68)
+
+#Convert to long format
+otu_long45<-gather(otu45, Sample, Counts, "X122":"X83") #dashes got changed to dots for some reason
+otu_long68<-gather(otu68, Sample, Counts, "o_122":"o_83") #dashes got changed to dots for some reason
+
+#make a data.Table
+otu_long45<-as.data.table(otu_long45)
+otu_long68<-as.data.table(otu_long68)
+otu_long45
+otu_long68
+
+###read in metadata file  #################################################################
+metaD45<-read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/V4V5/metadata_16S_V4V5_jonesSound2019.txt", sep = "")
+metaD45<-as.data.table(metaD45)
+metaD45$Sample<-as.character(metaD45$Sample)
+metaD45
+
+metaD68<-read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/V6V8/metadata_16S_V6V8_jonesSound2019.txt", sep = "")
+metaD68<-as.data.table(metaD68)
+metaD68$Sample<-as.character(metaD68$Sample)
+metaD68
+
+
+### Merge data tables  #################################################################
+
+# first set the keys to the common column:
+setkey(otu_long68,Sample)
+setkey(metaD68,Sample) 
+setkey(otu_long45,Sample)
+setkey(metaD45,Sample) 
+
+# join the tables
+OTU_Meta_Merge_45 <- merge(otu_long45,metaD45,by="Sample")
+OTU_Meta_Merge_45
+OTU_Meta_Merge_68 <- merge(otu_long68,metaD68,by="Sample")
+OTU_Meta_Merge_68
+
+#set key of OTU_Meta_Merge_45 as the OTUID to join the taxonomy table
+setkey(OTU_Meta_Merge_45,OTUID)
+setkey(taxonomy45,OTUID)
+setkey(OTU_Meta_Merge_68,OTUID)
+setkey(taxonomy68,OTUID)
+
+
+
+#merge SILVA
+SILVA_45_Merged <- merge(OTU_Meta_Merge_45,taxonomy45_SILVA)
+setkey(SILVA_45_Merged, Sample)
+SILVA_68_Merged <- merge(OTU_Meta_Merge_68,taxonomy68_SILVA)
+setkey(SILVA_68_Merged, Sample)
+
+#merge RDP
+taxonomy45_RDP
+RDP_45_Merged <- merge(OTU_Meta_Merge_45,taxonomy45_RDP)
+setkey(RDP_45_Merged, Sample)
+RDP_68_Merged <- merge(OTU_Meta_Merge_68,taxonomy68_RDP)
+setkey(RDP_68_Merged, Sample)
+
+#merge GG
+GG_45_Merged <- merge(OTU_Meta_Merge_45,taxonomy45_GG)
+setkey(GG_45_Merged, Sample)
+GG_68_Merged <- merge(OTU_Meta_Merge_68,taxonomy68_GG)
+setkey(GG_68_Merged, Sample)
+
+#Format by metadata
+#SILVA
+SILVA45_Full <- metaD45[SILVA_45_Merged]
+(SILVA45_Full)
+SILVA68_Full <- metaD68[SILVA_68_Merged]
+(SILVA68_Full)
+#RDP
+RDP45_Full <- metaD45[RDP_45_Merged]
+(RDP45_Full)
+RDP68_Full <- metaD68[RDP_68_Merged]
+(RDP68_Full)
+#GreenGenes
+GG45_Full <- metaD45[GG_45_Merged]
+(RDP45_Full)
+GG68_Full <- metaD68[GG_68_Merged]
+(GG68_Full)
+
+
+
+
+SILVA_OTU_Taxa45 <- merge(otu45,taxonomy45_SILVA)
+SILVA_OTU_Taxa45
+```
+
+
+
+```{r}
+##NMDS
+#example with randomized table from https://jonlefcheck.net/2012/10/24/nmds-tutorial-in-r/
+
+### Sort out data first ###
+
+#Choose OTU table here
+
+#otu<- read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/V4V5/V4V5__ASV_table.csv", header = T, row.names = 1) #,row.names=1
+#otu<- read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/V6V8/V6V8__ASV_table.csv", header = T, row.names = 1) #,row.names=1
+otu<- read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/combined_V4V5_V6V8_asv_SILVA.csv", header = T, row.names = 1) #,row.names=1
+#otu<- read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/combined_V4V5_V6V8_asv_RDP.csv", header = T, row.names = 1) #,row.names=1
+
+
+
+otu <- t(otu) #transpose
+class(otu)
+nrow(otu)
+ncol(otu)
+#head(otu)
+class(otu) <- "numeric"
+
+
+#set grouping info
+# grouping_info <- data.frame(row.names=(rownames(otu)),t(as.data.frame(strsplit(rownames(otu),"_"))))
+# class(grouping_info)
+# grouping_info
+
+
+#### Make NMDS ####
+#head(otu)
+
+my_NMDS<-metaMDS(otu,distance = "bray", k = 2, trymax = 50)
+my_NMDS
+
+#View NMDS straight, check correctness
+stressplot(my_NMDS)
+plot(my_NMDS)
+nrow(my_NMDS$points)
+
+#extract NMDS scores (x and y coordinates)
+data.scores = as.data.frame(scores(my_NMDS))
+colnames(data.scores)
+
+#metaMDS documentation full: https://www.rdocumentation.org/packages/vegan/versions/1.15-1/topics/metaMDS
+#framing the NMDS data
+NMDS=data.frame(x=my_NMDS$point[,1],y=my_NMDS$point[,2]) #Only uses point data (rest is not relevant in this case).
+
+NMDS_R=data.frame(x=my_NMDS$point[,1],y=my_NMDS$point[,2]) #Only uses point data (rest is not relevant in this case).
+
+#Lists are columns of the metadata table for V4V5. Used for making the NMDS table
+
+#Sample names of v4v5
+SampleNameV4V5<-c("VIO_33_15m","VIO_2_5m","VIO_33_50m","VIO_33_200m","VIO_2_10m","VIO_32_125m","VIO_30_47m","VIO_31_40m","VIO_24_17m","VIO_28_4m","VIO_32_350m","VIO_31_67m","VIO_28_12m","VIO_22_7m","VIO_13_5m","VIO_13_20m","VIO_22_20m","VIO_22_115m","VIO_13_140m","VIO_6_5m","VIO_7_5m","VIO_9_surface","VIO_7_27m","VIO_10_95m","Ter_122","VIO_39_7m","VIO_44_145m")
+#Sample names of v6v8
+SampleNameV6V8<-c("VIO_33_15m","VIO_2_5m","VIO_33_50m","VIO_33_200m","VIO_2_10m","VIO_32_125m","VIO_30_47m","VIO_31_40m","VIO_24_17m","VIO_28_4m","VIO_32_350m","VIO_31_67m","VIO_28_12m","VIO_22_7m","VIO_13_5m","VIO_13_20m","VIO_22_20m","VIO_22_115m","VIO_13_140m","VIO_6_5m","VIO_7_5m","VIO_9_surface","VIO_7_27m","VIO_10_95m","Ter_122","VIO_39_7m","VIO_44_145m")
+SampleName <- c(SampleNameV4V5,SampleNameV6V8) #combine the two vectors from V4V5 and V6V8
+
+#Transect names
+TransectV4V5<-c("Sverdrup_distal","Fram_Fiord","Sverdrup_distal","Sverdrup_distal","Fram_Fiord","Sverdrup_distal","Sverdrup_glacier","Sverdrup_glacier","Sverdrup_glacier_repeat","Sverdrup_glacier","Sverdrup_distal","Sverdrup_glacier","Sverdrup_glacier","Sverdrup_glacier","Belcher_4","Belcher_4","Sverdrup_glacier","Sverdrup_glacier","Belcher_4","Jakeman_4","Jakeman_5","Fram_Fiord","Jakeman_5","Belcher_1","Subglacial","Sydkap_3","Grise_Fiord_2")
+TransectV6V8<-c("Sverdrup_distal","Fram_Fiord","Sverdrup_distal","Sverdrup_distal","Fram_Fiord","Sverdrup_distal","Sverdrup_glacier","Sverdrup_glacier","Sverdrup_glacier_repeat","Sverdrup_glacier","Sverdrup_distal","Sverdrup_glacier","Sverdrup_glacier","Sverdrup_glacier","Belcher_4","Belcher_4","Sverdrup_glacier","Sverdrup_glacier","Belcher_4","Jakeman_4","Jakeman_5","Fram_Fiord","Jakeman_5","Belcher_1","Subglacial","Sydkap_3","Grise_Fiord_2")
+Transect <- c(TransectV4V5,TransectV6V8)
+
+#Depth
+DepthV4V5<-c("15", "5", "50", "200", "10", "125","47", "40", "17","4", "350", "67","12", "7", "5", "20", "20", "115", "140", "5", "5", "0", "27", "95", "112", "7", "145")
+DepthV6V8<-c("15", "5", "50", "200", "10", "125","47", "40", "17","4", "350", "67","12", "7", "5", "20", "20", "115", "140", "5", "5", "0", "27", "95", "112", "7", "145")
+Depth <- c(DepthV4V5,DepthV6V8)
+
+#Station
+StationV4V5<- c("VIO_33","VIO_2","VIO_33","VIO_33","VIO_2","VIO_32","VIO_30","VIO_31","VIO_24","VIO_28","VIO_32","VIO_31","VIO_28","VIO_22","VIO_13","VIO_13","VIO_22","VIO_22","VIO_13","VIO_6","VIO_7","VIO_9","VIO_7","VIO_10","Glacial_sample","VIO_39","VIO_44")
+StationV6V8<- c("VIO_33","VIO_2","VIO_33","VIO_33","VIO_2","VIO_32","VIO_30","VIO_31","VIO_24","VIO_28","VIO_32","VIO_31","VIO_28","VIO_22","VIO_13","VIO_13","VIO_22","VIO_22","VIO_13","VIO_6","VIO_7","VIO_9","VIO_7","VIO_10","Glacial_sample","VIO_39","VIO_44")
+Station <- c(StationV4V5,StationV6V8)
+
+#Sample ID
+IDV4V5<-c("3","5","6","8","14","16","20","23","25","29","31","32","33","37","39","43","46","48","56","57","65","75","81","83","122","155","157")
+IDV6V8<-c("3-o","5-o","6-o","8-o","14-o","16-o","20-o","23-o","25-o","29-o","31-o","32-o","33-o","37-o","39-o","43-o","46-o","48-o","56-o","57-o","65-o","75-o","
+81-o","83-o","122-o","155-o","157-o")
+ID <- c(IDV4V5,IDV6V8)
+
+#Primer type (for combined only)
+Primer <- c("V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8")
+
+
+#Specify which columns here we'll be using for the plot info (CURRENTLY SILVA V4V5)
+
+# ID <- IDV4V5
+# SampleName <- SampleNameV4V5
+# Transect <- TransectV4V5
+# Depth <- DepthV4V5
+# Station <- StationV4V5
+ 
+
+#add this to your NMDS data frame as a new column
+ NMDS$ID<-ID
+ NMDS$SampleName<-SampleName
+ NMDS$Transect<-Transect
+ NMDS$Depth<-Depth
+ NMDS$Station<-Station
+ NMDS$Primer<-Primer #Only needed for compo graph
+
+#order your Group column according what you would like, here for example, according to  ID number:
+NMDS
+NMDS$ID<-factor(NMDS$ID, levels=ID)
+class(NMDS$Depth) <- "numeric" 
+#NMDS<- NMDS[order(NMDS$Depth)] #sort by depth
+
+NMDS #This is a dataframe that has the metadata manually merged into it, as well as the X and Y values from the NMDS analysis. This is what is used to create the plot.
+
+#Graphing NMDS
+#Graph with all trimmings
+#Border around points: https://stackoverflow.com/questions/10437442/place-a-border-around-points
+#Labelling points: https://stackoverflow.com/questions/15624656/label-points-in-geom-point
+
+library(ggplot2)
+
+xx = ggplot(NMDS, aes(x = x, y = y)) + 
+    geom_point(aes(size = as.numeric(Depth), shape = Primer, colour = Transect))+
+  
+    theme(axis.text.y = element_text(colour = "black", size = 12, face = "bold"), 
+    axis.text.x = element_text(colour = "black", face = "bold", size = 12), 
+    legend.text = element_text(size = 12, face ="bold", colour ="black"), 
+    legend.position = "right", axis.title.y = element_text(face = "bold", size = 14), 
+    axis.title.x = element_text(face = "bold", size = 14, colour = "black"), 
+    legend.title = element_text(size = 14, colour = "black", face = "bold"), 
+    panel.background = element_blank(), panel.border = element_rect(colour = "black", fill = NA, size = 1.2),
+    legend.key=element_blank()) + 
+    labs(x = "x", colour = "Transect", y = "y", shape = "Primer")  
+ 
+xx
+
+
+primer_only = ggplot(NMDS, aes(x = x, y = y)) + 
+    ggtitle("NMDS of samples compared by primer")+
+    geom_point(aes(colour = Primer), size = 3)+ #By the primer column
+    geom_point(shape = 1,size = 3,colour = "black")+
+    geom_text(aes(label=SampleName),hjust=1.25, vjust=1.25,size=2.5)+
+
+  
+    theme(axis.text.y = element_text(colour = "black", size = 12, face = "bold"), 
+    axis.text.x = element_text(colour = "black", face = "bold", size = 12), 
+    legend.text = element_text(size = 12, face ="bold", colour ="black"), 
+    legend.position = "right", axis.title.y = element_text(face = "bold", size = 14), 
+    axis.title.x = element_text(face = "bold", size = 14, colour = "black"), 
+    legend.title = element_text(size = 14, colour = "black", face = "bold"), 
+    panel.background = element_blank(), panel.border = element_rect(colour = "black", fill = NA, size = 1.2),
+    legend.key=element_blank()) + 
+    labs(x = "NMDS1", y = "NMS2", colour = "Primer")  
+ 
+primer_only
+
+
+depth_only = ggplot(NMDS, aes(x = x, y = y)) + 
+    ggtitle("NMDS of samples sequenced by the V6-V8 region, based on depth of collection")+ # for the main title
+    geom_point(aes(size = Depth))+
+  
+    theme(axis.text.y = element_text(colour = "black", size = 12, face = "bold"), 
+    axis.text.x = element_text(colour = "black", face = "bold", size = 12), 
+    legend.text = element_text(size = 12, face ="bold", colour ="black"), 
+    legend.position = "right", axis.title.y = element_text(face = "bold", size = 14), 
+    axis.title.x = element_text(face = "bold", size = 14, colour = "black"), 
+    legend.title = element_text(size = 14, colour = "black", face = "bold"), 
+    panel.background = element_blank(), panel.border = element_rect(colour = "black", fill = NA, size = 1.2),
+    legend.key=element_blank()) + 
+    labs(x = "NMDS1", y = "NMDS2", colour = "Depth")  
+ 
+depth_only
+
+
+station_only = ggplot(NMDS, aes(x = x, y = y)) + 
+    scale_colour_manual(Paired)
+    geom_point(aes(colour = Station), size=5)+
+    geom_point(shape = 1,size = 5,colour = "black")+
+    ggtitle("NMDS of samples sequenced by the V6-V8 region, based on the station they were collected from")+ # for the main title
+  
+    theme(axis.text.y = element_text(colour = "black", size = 12, face = "bold"), 
+    axis.text.x = element_text(colour = "black", face = "bold", size = 12), 
+    legend.text = element_text(size = 12, face ="bold", colour ="black"), 
+    legend.position = "right", axis.title.y = element_text(face = "bold", size = 14), 
+    axis.title.x = element_text(face = "bold", size = 14, colour = "black"), 
+    legend.title = element_text(size = 14, colour = "black", face = "bold"), 
+    panel.background = element_blank(), panel.border = element_rect(colour = "black", fill = NA, size = 1.2),
+    legend.key=element_blank()) + 
+    labs(x = "NMDS1", y = "NMDS2", colour = "Depth")  
+ 
+station_only
+
+
+station_depth = ggplot(NMDS, aes(x = x, y = y)) + 
+    ggtitle("NMDS of samples sequenced by the V4-V5 region, comparing the station and depth of collection")+ # for the main title
+    geom_point(aes(size = Depth),colour="blue")+
+    geom_text(aes(label=St),hjust=1, vjust=1,size=5)+
+  
+    theme(axis.text.y = element_text(colour = "black", size = 12, face = "bold"), 
+    axis.text.x = element_text(colour = "black", face = "bold", size = 12), 
+    legend.text = element_text(size = 12, face ="bold", colour ="black"), 
+    legend.position = "right", axis.title.y = element_text(face = "bold", size = 14), 
+    axis.title.x = element_text(face = "bold", size = 14, colour = "black"), 
+    legend.title = element_text(size = 14, colour = "black", face = "bold"), 
+    panel.background = element_blank(), panel.border = element_rect(colour = "black", fill = NA, size = 1.2),
+    legend.key=element_blank()) + 
+    labs(x = "NMDS1", y = "NMDS2", colour = "Station", size = "Depth")  
+ 
+station_depth
+
+```
+
+
+
+```{r}
+##NMDS
+#example with randomized table from https://jonlefcheck.net/2012/10/24/nmds-tutorial-in-r/
+
+### Sort out data first ###
+
+#Choose OTU table here
+#otu<- read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/V4V5/V4V5__ASV_table.csv", row.names = 1) #,row.names=1
+#otu<- read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/V6V8/V6V8__ASV_table.csv", header = T, row.names = 1) #,row.names=1
+otu<- read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/combined_V4V5_V6V8_asv_SILVA.csv", header = T, row.names = 1) #,row.names=1
+
+head(otu)
+
+otu <- t(otu) #transpose
+class(otu)
+nrow(otu)
+#head(otu)
+class(otu) <- "numeric"
+
+#set grouping info
+# grouping_info <- data.frame(row.names=(rownames(otu)),t(as.data.frame(strsplit(rownames(otu),"_"))))
+# class(grouping_info)
+# grouping_info
+
+
+
+#### Make NMDS ####
+
+my_NMDS<-metaMDS(otu,distance = "bray", k = 2, trymax = 50)
+
+#View NMDS straight, check correctness
+stressplot(my_NMDS)
+plot(my_NMDS)
+nrow(my_NMDS$points)
+
+#extract NMDS scores (x and y coordinates)
+data.scores = as.data.frame(scores(my_NMDS))
+colnames(data.scores)
+
+#metaMDS documentation full: https://www.rdocumentation.org/packages/vegan/versions/1.15-1/topics/metaMDS
+#framing the NMDS data
+NMDS_S=data.frame(x=my_NMDS$point[,1],y=my_NMDS$point[,2]) #Only uses point data (rest is not relevant in this case).
+
+NMDS_S
+
+#Lists are columns of the metadata table for V4V5. Used for making the NMDS table
+
+#Sample names of v4v5
+SampleNameV4V5<-c("VIO_33_15m","VIO_2_5m","VIO_33_50m","VIO_33_200m","VIO_2_10m","VIO_32_125m","VIO_30_47m","VIO_31_40m","VIO_24_17m","VIO_28_4m","VIO_32_350m","VIO_31_67m","VIO_28_12m","VIO_22_7m","VIO_13_5m","VIO_13_20m","VIO_22_20m","VIO_22_115m","VIO_13_140m","VIO_6_5m","VIO_7_5m","VIO_9_surface","VIO_7_27m","VIO_10_95m","Ter_122","VIO_39_7m","VIO_44_145m")
+#Sample names of v6v8
+SampleNameV6V8<-c("VIO_33_15m","VIO_2_5m","VIO_33_50m","VIO_33_200m","VIO_2_10m","VIO_32_125m","VIO_30_47m","VIO_31_40m","VIO_24_17m","VIO_28_4m","VIO_32_350m","VIO_31_67m","VIO_28_12m","VIO_22_7m","VIO_13_5m","VIO_13_20m","VIO_22_20m","VIO_22_115m","VIO_13_140m","VIO_6_5m","VIO_7_5m","VIO_9_surface","VIO_7_27m","VIO_10_95m","Ter_122","VIO_39_7m","VIO_44_145m")
+SampleName <- c(SampleNameV4V5,SampleNameV6V8) #combine the two vectors from V4V5 and V6V8
+
+
+#Transect names
+TransectV4V5<-c("Sverdrup_distal","Fram_Fiord","Sverdrup_distal","Sverdrup_distal","Fram_Fiord","Sverdrup_distal","Sverdrup_glacier","Sverdrup_glacier","Sverdrup_glacier_repeat","Sverdrup_glacier","Sverdrup_distal","Sverdrup_glacier","Sverdrup_glacier","Sverdrup_glacier","Belcher_4","Belcher_4","Sverdrup_glacier","Sverdrup_glacier","Belcher_4","Jakeman_4","Jakeman_5","Fram_Fiord","Jakeman_5","Belcher_1","Subglacial","Sydkap_3","Grise_Fiord_2")
+TransectV6V8<-c("Sverdrup_distal","Fram_Fiord","Sverdrup_distal","Sverdrup_distal","Fram_Fiord","Sverdrup_distal","Sverdrup_glacier","Sverdrup_glacier","Sverdrup_glacier_repeat","Sverdrup_glacier","Sverdrup_distal","Sverdrup_glacier","Sverdrup_glacier","Sverdrup_glacier","Belcher_4","Belcher_4","Sverdrup_glacier","Sverdrup_glacier","Belcher_4","Jakeman_4","Jakeman_5","Fram_Fiord","Jakeman_5","Belcher_1","Subglacial","Sydkap_3","Grise_Fiord_2")
+Transect <- c(TransectV4V5,TransectV6V8)
+
+#Depth
+DepthV4V5<-c("15", "5", "50", "200", "10", "125","47", "40", "17","4", "350", "67","12", "7", "5", "20", "20", "115", "140", "5", "5", "0", "27", "95", "112", "7", "145")
+DepthV6V8<-c("15", "5", "50", "200", "10", "125","47", "40", "17","4", "350", "67","12", "7", "5", "20", "20", "115", "140", "5", "5", "0", "27", "95", "112", "7", "145")
+Depth <- c(DepthV4V5,DepthV6V8)
+
+#Station
+StationV4V5<- c("VIO_33","VIO_2","VIO_33","VIO_33","VIO_2","VIO_32","VIO_30","VIO_31","VIO_24","VIO_28","VIO_32","VIO_31","VIO_28","VIO_22","VIO_13","VIO_13","VIO_22","VIO_22","VIO_13","VIO_6","VIO_7","VIO_9","VIO_7","VIO_10","Glacial_sample","VIO_39","VIO_44")
+StationV6V8<- c("VIO_33","VIO_2","VIO_33","VIO_33","VIO_2","VIO_32","VIO_30","VIO_31","VIO_24","VIO_28","VIO_32","VIO_31","VIO_28","VIO_22","VIO_13","VIO_13","VIO_22","VIO_22","VIO_13","VIO_6","VIO_7","VIO_9","VIO_7","VIO_10","Glacial_sample","VIO_39","VIO_44")
+Station <- c(StationV4V5,StationV6V8)
+
+#Sample ID
+IDV4V5<-c("3","5","6","8","14","16","20","23","25","29","31","32","33","37","39","43","46","48","56","57","65","75","81","83","122","155","157")
+IDV6V8<-c("3-o","5-o","6-o","8-o","14-o","16-o","20-o","23-o","25-o","29-o","31-o","32-o","33-o","37-o","39-o","43-o","46-o","48-o","56-o","57-o","65-o","75-o","
+81-o","83-o","122-o","155-o","157-o")
+ID <- c(IDV4V5,IDV6V8)
+
+#Primer type (for combined only)
+Primer <- c("V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8")
+
+
+#Specify which columns here we'll be using for the plot info (CURRENTLY SILVA V4V5)
+
+ # ID <- IDV6V8
+ # SampleName <- SampleNameV6V8
+ # Transect <- TransectV6V8
+ # Depth <- DepthV6V8
+ # Station <- StationV6V8
+ 
+ ID <- IDV4V5
+ SampleName <- SampleNameV4V5
+ Transect <- TransectV4V5
+ Depth <- DepthV4V5
+ Station <- StationV4V5
+ NMDS <- data.frame() #initialize
+
+#add this to your NMDS data frame as a new column
+NMDS$ID<-ID
+NMDS$SampleName<-SampleName
+NMDS$Transect<-Transect
+NMDS$Depth<-Depth
+NMDS$Station<-Station
+NMDS$Primer<-Primer #Only needed for compo graph
+
+#order your Group column according what you would like, here for example, according to  ID number:
+NMDS$ID<-factor(NMDS$ID, levels=ID)
+class(NMDS$Depth) <- "numeric"
+
+NMDS #This is a dataframe that has the metadata manually merged into it, as well as the X and Y values from the NMDS analysis. This is what is used to create the plot.
+
+#Remove all outlier samples. Need comma after each when selecting. Didn't end up working...
+#NMDS_OLR <- NMDS[ ID != c('3','83','6'),] 
+
+#Graphing NMDS
+#References:
+
+  #Colour palettes: 
+    #https://rstudio-pubs-static.s3.amazonaws.com/177286_826aed2f00794640b301aeb42533c6f1.html 
+    #http://www.cookbook-r.com/Graphs/Colors_(ggplot2)/
+  #Point borders:
+    #https://stackoverflow.com/questions/10437442/place-a-border-around-points
+  #Axis labels:
+    #http://www.sthda.com/english/wiki/ggplot2-title-main-axis-and-legend-titles
+  #Labelling points
+    #https://stackoverflow.com/questions/15624656/label-points-in-geom-point
+
+
+#Maria graph code
+col=c("blue","pink")
+
+p<-ggplot(data=NMDS,aes(x,y,colour=Primer))+
+  geom_point(aes(colour=Primer), size=8)+
+  geom_point(shape=1, size=8, colour='black')+
+  scale_colour_manual(values=col)+
+  labs(title= "16S NMDS, based on RDP-assigned Orders", colour= "Primer")+
+  xlab("NMDS1")+
+  ylab("NMDS2")
+p + theme_bw()
+range(NMDS$x)
+
+p
+
+
+#Graph with all trimmings
+#library(ggplot2)
+
+#ONLY FOR BOTH ASV SETS
+# xx = ggplot(NMDS, aes(x = x, y = y)) + 
+#     geom_point(aes(size = as.numeric(Depth), shape = Primer, colour = Transect))+
+#   
+#     theme(axis.text.y = element_text(colour = "black", size = 12, face = "bold"), 
+#     axis.text.x = element_text(colour = "black", face = "bold", size = 12), 
+#     legend.text = element_text(size = 12, face ="bold", colour ="black"), 
+#     legend.position = "right", axis.title.y = element_text(face = "bold", size = 14), 
+#     axis.title.x = element_text(face = "bold", size = 14, colour = "black"), 
+#     legend.title = element_text(size = 14, colour = "black", face = "bold"), 
+#     panel.background = element_blank(), panel.border = element_rect(colour = "black", fill = NA, size = 1.2),
+#     legend.key=element_blank()) + 
+#     labs(x = "x", colour = "Transect", y = "y", shape = "Primer")  
+#  
+# xx
+
+
+primer_only = ggplot(NMDS, aes(x = x, y = y)) + 
+    ggtitle("NMDS of samples compared by primer")+
+    geom_point(aes(colour = NMDS$Primer), size = 3)+ #By the primer column
+    geom_point(shape = 1,size = 3,colour = "black")+
+    geom_text(aes(label=ID),hjust=1.25, vjust=1.25,size=2.5)+
+
+  
+    theme(axis.text.y = element_text(colour = "black", size = 12, face = "bold"), 
+    axis.text.x = element_text(colour = "black", face = "bold", size = 12), 
+    legend.text = element_text(size = 12, face ="bold", colour ="black"), 
+    legend.position = "right", axis.title.y = element_text(face = "bold", size = 14), 
+    axis.title.x = element_text(face = "bold", size = 14, colour = "black"), 
+    legend.title = element_text(size = 14, colour = "black", face = "bold"), 
+    panel.background = element_blank(), panel.border = element_rect(colour = "black", fill = NA, size = 1.2),
+    legend.key=element_blank()) + 
+    labs(x = "NMDS1", y = "NMS2", colour = "Primer")  
+ 
+primer_only
+
+
+
+
+
+#FOR ONLY 1 ASV SET
+depth_only = ggplot(NMDS, aes(x = x, y = y)) + 
+    ggtitle("NMDS of samples sequenced by the V4-V5 region, based on depth of sample")+
+    geom_point(aes(size = Depth))+
+  
+    theme(axis.text.y = element_text(colour = "black", size = 12, face = "bold"), 
+    axis.text.x = element_text(colour = "black", face = "bold", size = 12), 
+    legend.text = element_text(size = 12, face ="bold", colour ="black"), 
+    legend.position = "right", axis.title.y = element_text(face = "bold", size = 14), 
+    axis.title.x = element_text(face = "bold", size = 14, colour = "black"), 
+    legend.title = element_text(size = 14, colour = "black", face = "bold"), 
+    panel.background = element_blank(), panel.border = element_rect(colour = "black", fill = NA, size = 1.2),
+    legend.key=element_blank()) + 
+    labs(x = "NMDS1", y = "NMDS2", colour = "Depth")  
+ 
+depth_only
+
+
+station_only = ggplot(NMDS, aes(x = x, y = y)) + 
+    ggtitle("NMDS of samples sequenced by the V6-V8 region, based on the station that it was collected at")+
+    #scale_color_brewer(type = 'div', palette = 'Paired', direction = 1)+ 
+    geom_point(aes(colour = Station),size=5)+
+    geom_point(shape = 1,size = 5,colour = "black")+
+  
+    theme(axis.text.y = element_text(colour = "black", size = 12, face = "bold"), 
+    axis.text.x = element_text(colour = "black", face = "bold", size = 12), 
+    legend.text = element_text(size = 12, face ="bold", colour ="black"), 
+    legend.position = "right", axis.title.y = element_text(face = "bold", size = 14), 
+    axis.title.x = element_text(face = "bold", size = 14, colour = "black"), 
+    legend.title = element_text(size = 14, colour = "black", face = "bold"), 
+    panel.background = element_blank(), panel.border = element_rect(colour = "black", fill = NA, size = 1.2),
+    legend.key=element_blank()) + 
+    labs(x = "NMDS1", y = "NMDS2", colour = "Station")  
+ 
+station_only
+
+
+station_depth = ggplot(NMDS, aes(x = x, y = y)) + 
+    ggtitle("NMDS of samples sequenced by the V6-V8 region, comparing the station and depth")+
+    geom_point(aes(size = Depth), colour = "blue")+
+    geom_text(aes(label=Station),hjust=1.25, vjust=1.25,size=2.5)+
+    #geom_point(shape = 1,colour = "black")+
+  
+    theme(axis.text.y = element_text(colour = "black", size = 12, face = "bold"), 
+    axis.text.x = element_text(colour = "black", face = "bold", size = 12), 
+    legend.text = element_text(size = 12, face ="bold", colour ="black"), 
+    legend.position = "right", axis.title.y = element_text(face = "bold", size = 14), 
+    axis.title.x = element_text(face = "bold", size = 14, colour = "black"), 
+    legend.title = element_text(size = 14, colour = "black", face = "bold"), 
+    panel.background = element_blank(), panel.border = element_rect(colour = "black", fill = NA, size = 1.2),
+    legend.key=element_blank()) + 
+    labs(x = "NMDS1", y = "NMDS2", colour = "Station", size = "Depth")  
+ 
+station_depth
+
+#Samples 3, 83, and 6 are outliers.
+
+```
+```{r}
+#Statistical comparison of NMDSs using ANOSIM
+NMDS
+
+otu<- read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/combined_V4V5_V6V8_asv_SILVA.csv", header = T) #,row.names=1
+#otu<- read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/combined_V4V5_V6V8_asv_RDP.csv", header = T) #,row.names=1
+otu <- as.data.frame(otu[,-1]) #Remove names
+
+#consider transposing OTU table, group by primer. Find a way to assign the samples to the appropriate primer. Add column primer and anosim by that.
+otu <- t(otu)
+otu <- as.data.frame(otu)
+#otu$primer <- Primer 
+
+
+#Primer type (for combined only)
+Primer <- c("V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8")
+
+ano = anosim(otu, Primer, distance = "bray", permutations = 999)
+ano
+
+
+
+
+
+```
+
+
+
+
+
+
+
+
+```{r}
+? hclust
+? vegdist
+
+# otu45<- read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/V4V5/V4V5__ASV_table.csv", row.names = 1) #,row.names=1
+# otu45 <- t(otu45) #transpose
+# 
+# otu68<- read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/V6V8/V6V8__ASV_table.csv", header = T, row.names = 1) #,row.names=1
+# otu68 <- t(otu68) #transpose
+
+otuBoth_SILVA<- read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/combined_V4V5_V6V8_asv_SILVA.csv", header = T, row.names = 1) #,row.names=1
+otuBoth_RDP<- read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/combined_V4V5_V6V8_asv_RDP.csv", header = T, row.names = 1) #,row.names=1
+
+otuBoth_SILVA <- t(otuBoth_SILVA) #transpose
+otuBoth_RDP <- t(otuBoth_RDP) #transpose
+
+#bray distance matrix
+cluster_SIL<-vegdist(otuBoth_SILVA, method="bray")
+cluster_RDP<-vegdist(otuBoth_RDP, method="bray")
+
+Primer <- c("V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V4V5","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8","V6V8")
+
+sampleNames<-c("VIO_33_15m","VIO_2_5m","VIO_33_50m","VIO_33_200m","VIO_2_10m","VIO_32_125m","VIO_30_47m","VIO_31_40m","VIO_24_17m","VIO_28_4m","VIO_32_350m","VIO_31_67m","VIO_28_12m","VIO_22_7m","VIO_13_5m","VIO_13_20m","VIO_22_20m","VIO_22_115m","VIO_13_140m","VIO_6_5m","VIO_7_5m","VIO_9_surface","VIO_7_27m","VIO_10_95m","Ter_122","VIO_39_7m","VIO_44_145m", "VIO_33_15m_X","VIO_2_5m_X","VIO_33_50m_X","VIO_33_200m_X","VIO_2_10m_X","VIO_32_125m_X","VIO_30_47m_X","VIO_31_40m_X","VIO_24_17m_X","VIO_28_4m_X","VIO_32_350m_X","VIO_31_67m_X","VIO_28_12m_X","VIO_22_7m_X","VIO_13_5m_X","VIO_13_20m_X","VIO_22_20m_X","VIO_22_115m_X","VIO_13_140m_X","VIO_6_5m_X","VIO_7_5m_X","VIO_9_surface_X","VIO_7_27m_X","VIO_10_95m_X","Ter_122_X","VIO_39_7m_X","VIO_44_145m_X")
+
+length(sampleNames)
+
+#Plot
+
+clust_SIL <- hclust(cluster_SIL, method = "complete", members = NULL)
+#Plot the actual graph S3 method for hclust
+plot(clust_SIL, hang = 0.1,labels = sampleNames, check = TRUE,
+     axes = TRUE, frame.plot = FALSE, ann = TRUE,
+     main = "Cluster Dendrogram of ASV Data from SILVA",
+     sub = NULL, xlab = NULL, ylab = "Height")
+?hclust
+
+
+clust_RDP <- hclust(cluster_RDP, method = "complete", members = NULL)
+#Plot the actual graph S3 method for hclust
+plot(clust_RDP, labels = sampleNames, hang = 0.1, check = TRUE,
+     axes = TRUE, frame.plot = FALSE, ann = TRUE,
+     main = "Cluster Dendrogram of ASV Data from RDP",
+     sub = NULL, xlab = NULL, ylab = "Height")
+
+plot(clust_RDP, hang = -1, cex = 0.7) #Normal dendrogram plot
+
+#Tutorial
+#http://www.sthda.com/english/wiki/beautiful-dendrogram-visualizations-in-r-5-must-known-methods-unsupervised-machine-learning
+
+
+clust_RDP_dendro <- as.dendrogram(clust_RDP) #Turn into dendro object.
+clust_SILVA_dendro <- as.dendrogram(clust_SIL) #Turn into dendro object.
+
+
+colAssign <- c("blue","blue","blue","blue","blue","blue","blue","blue","blue","blue","blue","blue","blue","blue","blue","blue","blue","blue","blue","blue","blue","blue","blue","blue","blue","blue","blue", "red","red","red","red","red","red","red","red","red","red","red","red","red","red","red","red","red","red","red","red","red","red","red","red","red","red","red")
+
+
+#Set up dendrogram
+dend <- cluster_SIL %>%  scale %>% 
+        dist %>% hclust %>% as.dendrogram  %>% 
+        set("leaves_pch", 19) %>%  #shape
+        set("leaves_col", "blue") %>% # node point color
+        set("labels_cex", 0.6) # Change size
+
+#labels(dend) <- sampleNames #change to actual sample names
+
+dend %>% plot
+
+#Note, I eventually just coloured the dots by hand to indicate which primers were where.
+
+
+```
+
+
+
+```{r}
+#Kruskal Wallice Test
+#http://www.sthda.com/english/wiki/kruskal-wallis-test-in-r
+
+#With outliers included
+kruskal.test(x ~ y, data = NMDS_S)
+kruskal.test(x ~ y, data = NMDS_R)
+NMDS
+
+?kruskal
+```
+
+
+
+
+

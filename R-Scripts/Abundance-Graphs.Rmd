@@ -1,0 +1,1091 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+#Abundance graphs
+```
+
+---
+title: "Database NMDS"
+output: html_notebook
+---
+```{r}
+#Load packages
+
+library("tidyverse")
+library("dada2")
+library("biomformat")
+library('vegan')
+library('readr')
+library("dplyr")     # To manipulate dataframes
+library("readxl")    # To read Excel files into R
+library("ggplot2")   # for high quality graphics
+library("BiocManager")
+library("phyloseq")   
+library("tidyr")
+library("data.table")
+library("esquisse")
+
+#Colour palettes
+#install.packages("esquisse")
+library(wesanderson)
+library(viridis)
+library(RColorBrewer)
+library(ggsci)
+```
+
+```{r}
+#Load in Data, merge tables
+
+###read in biom-taxonomy for SILVA ####################################################
+
+#SILVA
+taxonomy45_SILVA <- read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/V4V5/V4V5_SILVA_taxonomy.csv")
+taxonomy68_SILVA <- read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/V6V8/taxonomy_SILVA_V6V8.csv")
+
+#RDP
+taxonomy45_RDP <- read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/V4V5/taxonomy_RDP_V4V5.csv")
+taxonomy68_RDP <- read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/V6V8/taxonomy_RDP_V6V8.csv")
+
+#GreenGenes
+taxonomy45_GG <- read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/V4V5/taxonomy_greengenes_V4V5.csv")
+taxonomy68_GG <- read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/V6V8/taxonomy_greengenes_V6V8.csv")
+
+taxonomy45_SILVA<-as.data.table(taxonomy45_SILVA)
+taxonomy68_SILVA<-as.data.table(taxonomy68_SILVA)
+taxonomy45_RDP<-as.data.table(taxonomy45_RDP)
+taxonomy68_RDP<-as.data.table(taxonomy68_RDP)
+taxonomy45_GG<-as.data.table(taxonomy45_GG)
+taxonomy68_GG<-as.data.table(taxonomy68_GG)
+
+
+###read in otu tables #################################################################
+
+otu45<- read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/V4V5/V4V5__ASV_table.csv", header = T) #,row.names=1
+otu68<- read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/V6V8/V6V8__ASV_table.csv", header = T)
+head(otu45) 
+head(otu68)
+
+#Convert to long format
+otu_long45<-gather(otu45, Sample, Counts, "X3":"X157") #dashes got changed to dots for some reason
+otu_long68<-gather(otu68, Sample, Counts, "o_122":"o_83") #dashes got changed to dots for some reason
+
+#make a data.Table
+otu_long45<-as.data.table(otu_long45)
+otu_long68<-as.data.table(otu_long68)
+otu_long45
+otu_long68
+
+###read in metadata file  #################################################################
+metaD45<-read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/V4V5/metadata_16S_V4V5_jonesSound2019.txt", sep = "")
+metaD45<-as.data.table(metaD45)
+metaD45$Sample<-as.character(metaD45$Sample)
+metaD45
+
+metaD68<-read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/V6V8/metadata_16S_V6V8_jonesSound2019.txt", sep = "")
+metaD68<-as.data.table(metaD68)
+metaD68$Sample<-as.character(metaD68$Sample)
+metaD68
+
+
+### Merge data tables  #################################################################
+
+# first set the keys to the common column:
+setkey(otu_long68,Sample)
+setkey(metaD68,Sample) 
+setkey(otu_long45,Sample)
+setkey(metaD45,Sample) 
+
+# join the tables
+OTU_Meta_Merge_45 <- merge(otu_long45,metaD45,by="Sample")
+OTU_Meta_Merge_45
+OTU_Meta_Merge_68 <- merge(otu_long68,metaD68,by="Sample")
+OTU_Meta_Merge_68
+
+#set key of OTU_Meta_Merge_45 as the OTUID to join the taxonomy table
+setkey(OTU_Meta_Merge_45,OTUID)
+setkey(taxonomy45,OTUID)
+setkey(OTU_Meta_Merge_68,OTUID)
+setkey(taxonomy68,OTUID)
+
+#merge SILVA
+SILVA_45_Merged <- merge(OTU_Meta_Merge_45,taxonomy45_SILVA)
+setkey(SILVA_45_Merged, Sample)
+SILVA_68_Merged <- merge(OTU_Meta_Merge_68,taxonomy68_SILVA)
+setkey(SILVA_68_Merged, Sample)
+
+#merge RDP
+taxonomy45_RDP
+RDP_45_Merged <- merge(OTU_Meta_Merge_45,taxonomy45_RDP)
+setkey(RDP_45_Merged, Sample)
+RDP_68_Merged <- merge(OTU_Meta_Merge_68,taxonomy68_RDP)
+setkey(RDP_68_Merged, Sample)
+
+#merge GG
+GG_45_Merged <- merge(OTU_Meta_Merge_45,taxonomy45_GG)
+setkey(GG_45_Merged, Sample)
+GG_68_Merged <- merge(OTU_Meta_Merge_68,taxonomy68_GG)
+setkey(GG_68_Merged, Sample)
+
+#Format by metadata
+#SILVA
+SILVA45_Full <- metaD45[SILVA_45_Merged]
+(SILVA45_Full)
+SILVA68_Full <- metaD68[SILVA_68_Merged]
+(SILVA68_Full)
+#RDP
+RDP45_Full <- metaD45[RDP_45_Merged]
+(RDP45_Full)
+RDP68_Full <- metaD68[RDP_68_Merged]
+(RDP68_Full)
+#GreenGenes
+GG45_Full <- metaD45[GG_45_Merged]
+(GG45_Full)
+GG68_Full <- metaD68[GG_68_Merged]
+(GG68_Full)
+
+
+
+
+SILVA_OTU_Taxa45 <- merge(otu45,taxonomy45_SILVA)
+SILVA_OTU_Taxa45
+```
+```{r}
+#Count bacterial orders
+
+bacterial_order_SILVA45 <- taxonomy45_SILVA %>% filter((Kingdom == "Bacteria") & (Order != ""))
+bacterial_order_SILVA45 <- distinct(bacterial_order_SILVA45, Order)
+#Exactly 230 unique bacterial orders were found
+
+bacterial_order_SILVA68 <- taxonomy68_SILVA %>% filter((Kingdom == "Bacteria") & (Order != ""))
+bacterial_order_SILVA68 <- distinct(bacterial_order_SILVA68, Order)
+#195 unique bacterial orders were found
+
+bacterial_order_RDP45 <- taxonomy45_RDP %>% filter((Kingdom == "Bacteria") & (Order != ""))
+bacterial_order_RDP45 <- distinct(bacterial_order_RDP45, Order)
+#Exactly 103 unique bacterial orders were found
+
+bacterial_order_RDP68 <- taxonomy68_RDP %>% filter((Kingdom == "Bacteria") & (Order != ""))
+bacterial_order_RDP68 <- distinct(bacterial_order_RDP68, Order)
+#103 unique bacterial orders were found
+
+
+
+###Archaeal orders
+
+archaeal_order_SILVA45 <- taxonomy45_SILVA %>% filter((Kingdom == "Archaea") & (Order != ""))
+archaeal_order_SILVA45 <- distinct(archaeal_order_SILVA45, Order)
+archaeal_order_SILVA45
+
+archaeal_order_SILVA68 <- taxonomy68_SILVA %>% filter((Kingdom == "Archaea") & (Order != ""))
+archaeal_order_SILVA68 <- distinct(archaeal_order_SILVA68, Order)
+archaeal_order_SILVA68
+
+archaeal_order_RDP45 <- taxonomy45_RDP %>% filter((Kingdom == "Archaea") & (Order != ""))
+archaeal_order_RDP45 <- distinct(archaeal_order_RDP45, Order)
+archaeal_order_RDP45
+
+archaeal_order_RDP68 <- taxonomy68_RDP %>% filter((Kingdom == "Archaea") & (Order != ""))
+archaeal_order_RDP68 <- distinct(archaeal_order_RDP68, Order)
+archaeal_order_RDP68
+
+
+
+###Chloroplast
+#Chloroplast ASVs. Not unique, NOT ORDERS, just ASVs detected
+
+chloro_order_SILVA45 <- taxonomy45_SILVA %>% filter((Order == "Chloroplast") & (Order != ""))
+chloro_order_SILVA45
+
+chloro_order_SILVA68 <- taxonomy68_SILVA %>% filter((Order == "Chloroplast") & (Order != ""))
+chloro_order_SILVA68
+
+chloro_order_RDP45 <- taxonomy45_RDP %>% filter((Order == "Chloroplast") & (Order != ""))
+chloro_order_RDP45
+
+chloro_order_RDP68 <- taxonomy68_RDP %>% filter((Order == "Chloroplast") & (Order != ""))
+chloro_order_RDP68
+
+
+
+
+
+
+```
+
+
+
+```{r}
+#Statistical differences in OTU table by primer region
+
+#Kruskal Wallis test:
+#http://www.sthda.com/english/wiki/kruskal-wallis-test-in-r
+#https://stats.stackexchange.com/questions/443329/kruskal-wallis-test-for-multiple-variables-different-in-r-and-python
+  
+#kruskal.test(Primer ~ otu_full[,1], data = otu_full) ###Test one by one
+
+otu_full <- merge(by = "OTUID", otu45, otu68, all.x = TRUE)
+
+kruskal.test(otu_full[2:28], otu_full[29:55], data = otu_full) #Test range of columns against each other
+
+```
+
+
+
+
+
+
+```{r}
+#Top 20 orders of each database and each primer as tables
+
+
+#SILVA:
+
+#Sort out the counts of Orders
+orderCount45_SILVA<- as.data.table(table(SILVA45_Full$Order)) #count by Order.
+orderCount45_SILVA<- orderCount45_SILVA[order(orderCount45_SILVA$N)]
+orderCount45_SILVA #V1 is the Order name, N is the count.
+
+orderCount68_SILVA<- as.data.table(table(SILVA68_Full$Order)) #count by Order.
+orderCount68_SILVA<- orderCount68_SILVA[order(orderCount68_SILVA$N)]
+orderCount68_SILVA #V1 is the Order name, N is the count.
+
+#COMBINED VALUES
+orderCountBoth_SILVA <- merge(orderCount45_SILVA, orderCount68_SILVA, by = "V1" )
+orderCountBoth_SILVA$total_ASV_count <- orderCountBoth_SILVA$N.x + orderCountBoth_SILVA$N.y
+orderCountBoth_SILVA<- orderCountBoth_SILVA[order(orderCountBoth_SILVA$total_ASV_count)]
+
+
+#Get top Orders
+topTaxa45_SILVA <- slice_tail(orderCount45_SILVA, n=20) #get the bottom 20 counts (it's by ascending order)
+topTaxa45_SILVA
+
+topTaxa68_SILVA <- slice_tail(orderCount68_SILVA,n=20)
+topTaxa68_SILVA
+
+topTaxaBoth_SILVA <- slice_tail(orderCountBoth_SILVA,n=20)
+topTaxaBoth_SILVA
+
+topTaxaBoth_SILVA_namevec <- topTaxaBoth_SILVA$V1
+
+
+
+#Green Genes:
+
+#Sort out the counts of Orders
+orderCount45_GG<- as.data.table(table(GG45_Full$Order)) #count by Order.
+orderCount45_GG<- orderCount45_GG[order(orderCount45_GG$N)]
+orderCount45_GG #V1 is the Order name, N is the count.
+
+
+orderCount68_GG<- as.data.table(table(GG68_Full$Order)) #count by Order.
+orderCount68_GG<- orderCount68_GG[order(orderCount68_GG$N)]
+orderCount68_GG #V1 is the Order name, N is the count.
+
+#Get top Orders
+topTaxa45_GG <- slice_tail(orderCount45_GG, n=20) #get the bottom 20 counts (it's by ascending order)
+topTaxa45_GG
+
+topTaxa68_GG <- slice_tail(orderCount68_GG,n=20)
+topTaxa68_GG
+
+
+#RDP:
+
+#Sort out the counts of Orders
+orderCount45_RDP<- as.data.table(table(RDP45_Full$Order)) #count by Order.
+orderCount45_RDP<- orderCount45_RDP[order(orderCount45_RDP$N)]
+orderCount45_RDP #V1 is the Order name, N is the count.
+
+orderCount68_RDP<- as.data.table(table(RDP68_Full$Order)) #count by Order.
+orderCount68_RDP<- orderCount68_RDP[order(orderCount68_RDP$N)]
+orderCount68_RDP #V1 is the Order name, N is the count.
+
+#Get top Orders
+topTaxa45_RDP <- slice_tail(orderCount45_RDP, n=20) #get the bottom 20 counts (it's by ascending order)
+topTaxa45_RDP
+
+topTaxa68_RDP <- slice_tail(orderCount68_RDP,n=20)
+topTaxa68_RDP
+
+
+```
+
+
+
+```{r}
+#####Proportion plot for each sample with both primer, based on ORDER ######
+
+#SILVA:
+
+#Find top 20 orders and put them in a vector (used to filter)
+top_SILVA45<- as.data.table(table(SILVA45_Full$Order)) #count by Order.
+top_SILVA45<- top_SILVA45[order(top_SILVA45$N)]
+top_SILVA45 <- slice_tail(top_SILVA45, n=20)
+top_SILVA45 <- as.vector(tail(top_SILVA45$V1,20))
+top_SILVA45 #Vector containing top 20
+
+top_SILVA68<- as.data.table(table(SILVA68_Full$Order)) #count by Order.
+top_SILVA68<- top_SILVA68[order(top_SILVA68$N)]
+top_SILVA68 <- slice_tail(top_SILVA68, n=20)
+top_SILVA68 <- as.vector(tail(top_SILVA68$V1,20))
+top_SILVA68 #Vector containing top 20
+
+top_GG45<- as.data.table(table(GG45_Full$Order)) #count by Order.
+top_GG45<- top_GG45[order(top_GG45$N)]
+top_GG45 <- slice_tail(top_GG45, n=20)
+top_GG45 <- as.vector(tail(top_GG45$V1,20))
+top_GG45 #Vector containing top 20
+
+top_GG68<- as.data.table(table(GG68_Full$Order)) #count by Order.
+top_GG68<- top_GG68[order(top_GG68$N)]
+top_GG68 <- slice_tail(top_GG68, n=20)
+top_GG68 <- as.vector(tail(top_GG68$V1,20))
+top_GG68 #Vector containing top 20
+
+top_RDP45<- as.data.table(table(RDP45_Full$Order)) #count by Order.
+top_RDP45<- top_RDP45[order(top_RDP45$N)]
+top_RDP45 <- slice_tail(top_RDP45, n=20)
+top_RDP45 <- as.vector(tail(top_RDP45$V1,20))
+top_RDP45 #Vector containing top 20
+
+top_RDP68<- as.data.table(table(RDP68_Full$Order)) #count by Order.
+top_RDP68<- top_RDP68[order(top_RDP68$N)]
+top_RDP68 <- slice_tail(top_RDP68, n=20)
+top_RDP68 <- as.vector(tail(top_RDP68$V1,20))
+top_RDP68 #Vector containing top 20
+
+
+
+#Filter results
+top20_SILVA45 <- SILVA45_Full %>% filter(Order == top_SILVA45) #Filter for only the ones with the names of the top 20 orders
+top20_SILVA68 <- SILVA68_Full %>% filter(Order == top_SILVA68) #Filter for only the ones with the names of the top 20 orders
+
+top20_GG45 <- GG45_Full %>% filter(Order == top_GG45) #Filter for only the ones with the names of the top 20 orders
+top20_GG68 <- GG68_Full %>% filter(Order == top_GG68) #Filter for only the ones with the names of the top 20 orders
+
+top20_RDP45 <- RDP45_Full %>% filter(Order == top_RDP45) #Filter for only the ones with the names of the top 20 orders
+top20_RDP68 <- RDP68_Full %>% filter(Order == top_RDP68) #Filter for only the ones with the names of the top 20 orders
+
+
+
+
+GG45 <- ggplot(top20_GG45, aes(x = SAMPLE_NAME, y = Counts, fill = Order)) + geom_bar(position = "fill", stat = "identity")
+    ggplot(top20_GG45, aes(fill=Counts, y=1, x=1)) + 
+    theme(axis.text.x= element_text(angle = 45, hjust = 1, size=7)) +guides(fill=guide_legend(title="Order"))+ylab(label="Relative abundance")+
+    ggtitle("Top 20 Orders from GreenGenes in samples sequenced by V4-V5 region")+ # for the main title
+    geom_bar(position="fill", stat="identity") + expand_limits(y = 9, x=-9) # or some other arbitrarily large number
+GG45
+
+
+GG68 <- ggplot(top20_GG68, aes(x = Counts, y = Sample, fill = Order)) + geom_bar(position = "fill", stat = "identity")
+    ggplot(top20_GG68, aes(fill=Counts, y=1, x=1)) + 
+    ggtitle("Top 20 Orders from GreenGenes in samples sequenced by V6-V8 region")+ # for the main title
+    geom_bar(position="fill", stat="identity") + expand_limits(y = 9, x=-9)  # or some other arbitrarily large number
+GG68
+
+
+
+S45 <- ggplot(top20_SILVA45, aes(x = Counts, y = Sample, fill = Order)) + geom_bar(position = "fill", stat = "identity")
+    ggplot(top20_SILVA45, aes(fill=Counts, y=1, x=1)) + 
+    ggtitle("Top 20 Orders from SILVA in samples sequenced by V4-V5 region")+ # for the main title
+    geom_bar(position="fill", stat="identity") + expand_limits(y = 9, x=-9)  # or some other arbitrarily large number
+S45
+
+
+S68 <- ggplot(top20_SILVA68, aes(x = Counts, y = Sample, fill = Order)) + geom_bar(position = "fill", stat = "identity")
+    ggplot(top20_SILVA68, aes(fill=Counts, y=1, x=1)) + 
+    ggtitle("Top 20 Orders from SILVA in samples sequenced by V6-V8 region")+ # for the main title
+    geom_bar(position="fill", stat="identity") + expand_limits(y = 9, x=-9)  # or some other arbitrarily large number
+S68
+
+
+RDP45 <- ggplot(top20_RDP45, aes(x = Counts, y = Sample, fill = Order)) + geom_bar(position = "fill", stat = "identity")
+    ggplot(top20_RDP45, aes(fill=Counts, y=1, x=1)) + 
+    ggtitle("Top 20 Orders from GreenGenes in samples sequenced by V6-V8 region")+ # for the main title
+    geom_bar(position="fill", stat="identity") + expand_limits(y = 9, x=-9)  # or some other arbitrarily large number
+RDP45
+
+#Working on assigning specific colours...
+
+colourAssign = c("Frankiales"="blue","Microtrichales"="coral3","Marine Group II"="chartreuse4","Verrucomicrobiales"="deeppink3","Oceanospirillales"="darkviolet","Sphingobacteriales"="maroon3","Alteromonadales"="paleturquoise4","Rickettsiales"="seagreen4","Cellvibrionales"="orangered2","Pirellulales"="orange3","Nitrosopumilales"="royalblue3","Sphingomonadales"="raspbbrawn3","SAR11 clade"="navyblue","Cytophagales"="brown3","Rhodobacterales"="darkcyan","Chitinophagales"="firebrick3"," "="gray46","Chloroplast"="mediumseagreen","Betaproteobacteriales"="mediumpurple2","Flavobacteriales"="goldenrod1")
+
+#colourAssign = c("blue","coral3","chartreuse4","deeppink3","darkviolet","maroon3","paleturquoise4","seagreen4","orangered2","orange3","royalblue3","raspbbrawn3","navyblue","brown3","darkcyan","firebrick3","gray46","mediumseagreen","mediumpurple2","goldenrod1")
+
+
+RDP68 <- ggplot(top20_RDP68, aes(x = Counts, y = Sample, fill = Order)) + geom_bar(position = "fill", stat = "identity")
+    ggplot(top20_RDP68, aes(fill=Counts, y=1, x=1)) + 
+    ggtitle("Top 20 Orders from GreenGenes in samples sequenced by V6-V8 region")+ # for the main title
+    geom_bar(position="fill", stat="identity") + expand_limits(y = 9, x=-9)+  # or some other arbitrarily large number
+    #scale_fill_manual("legend", values = colourAssign)
+    #theme_bw()+scale_fill_manual(values=colourAssign)
+        
+RDP68
+
+
+? scale_fill_manual
+
+#assign colour, each line is for specific phyla (more colour= for more phyla, where y (assignation)= my taxonomy):
+col=c("blue", "chartreuse4", "darkgreen", "yellow", "goldenrod4", "chartreuse2", "darkolivegreen", "cornsilk", "cornsilk4")
+col=c("blue", "chartreuse4", "darkgreen", "yellow","goldenrod", "darkgoldenrod2")
+col=c("black", "purple")
+long_trophs2 %>%
+  ggplot(aes(x=Depth, y=assignation, size = rel_abund, fill=Stage)) +
+  geom_point( colour="black", pch=21) + facet_grid(. ~ Stage, drop=TRUE,scale="free",space="free_x")+
+  theme_bw()+scale_fill_manual(values=col)+
+  theme(axis.text.x= element_text(angle = 45, hjust = 1, size=8))+
+  theme(axis.text.y= element_text(size=8))
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+#Top 20 phylum of each database and each primer as tables
+
+
+#SILVA:
+
+#Sort out the counts of Orders
+phylumCount45_SILVA<- as.data.table(table(SILVA45_Full$Phylum)) #count by Phylum.
+phylumCount45_SILVA<- phylumCount45_SILVA[order(phylumCount45_SILVA$N)]
+phylumCount45_SILVA #V1 is the Phylum name, N is the count.
+
+phylumCount68_SILVA<- as.data.table(table(SILVA68_Full$Phylum)) #count by Phylum.
+phylumCount68_SILVA<- phylumCount68_SILVA[order(phylumCount68_SILVA$N)]
+phylumCount68_SILVA #V1 is the Phylum name, N is the count.
+
+#Get top Orders
+topTaxa45_SILVA_Phy <- slice_tail(phylumCount45_SILVA, n=20) #get the bottom 20 counts (it's by ascending order)
+topTaxa45_SILVA_Phy
+
+topTaxa68_SILVA_Phy <- slice_tail(phylumCount68_SILVA,n=20)
+topTaxa68_SILVA_Phy
+
+
+#Green Genes:
+
+#Sort out the counts of Orders
+phylumCount45_GG<- as.data.table(table(GG45_Full$Phylum)) #count by Phylum.
+phylumCount45_GG<- phylumCount45_GG[order(phylumCount45_GG$N)]
+phylumCount45_GG #V1 is the Phylum name, N is the count.
+
+phylumCount68_GG<- as.data.table(table(GG68_Full$Phylum)) #count by Phylum.
+phylumCount68_GG<- phylumCount68_GG[order(phylumCount68_GG$N)]
+phylumCount68_GG #V1 is the Phylum name, N is the count.
+
+#Get top Orders
+topTaxa45_GG_Phy <- slice_tail(phylumCount45_GG, n=20) #get the bottom 20 counts (it's by ascending order)
+topTaxa45_GG_Phy
+
+topTaxa68_GG_Phy <- slice_tail(phylumCount68_GG,n=20)
+topTaxa68_GG_Phy
+
+
+#RDP:
+
+#Sort out the counts of Orders
+phylumCount45_RDP<- as.data.table(table(RDP45_Full$Phylum)) #count by Phylum.
+phylumCount45_RDP<- phylumCount45_RDP[order(phylumCount45_RDP$N)]
+phylumCount45_RDP #V1 is the Phylum name, N is the count.
+
+phylumCount68_RDP<- as.data.table(table(RDP68_Full$Phylum)) #count by Phylum.
+phylumCount68_RDP<- phylumCount68_RDP[order(phylumCount68_RDP$N)]
+phylumCount68_RDP #V1 is the Phylum name, N is the count.
+
+#Get top Orders
+topTaxa45_RDP_Phy <- slice_tail(phylumCount45_RDP, n=20) #get the bottom 20 counts (it's by ascending order)
+topTaxa45_RDP_Phy
+
+topTaxa68_GG_Phy <- slice_tail(phylumCount68_RDP,n=20)
+topTaxa68_GG_Phy
+```
+
+```{r}
+#####Proportion plot for each sample with both primer, based on PHYLUM ######
+
+#SILVA:
+
+#Find top 20 orders and put them in a vector (used to filter)
+top_SILVA45_Phy<- as.data.table(table(SILVA45_Full$Phylum)) #count by Phylum.
+top_SILVA45_Phy<- top_SILVA45_Phy[order(top_SILVA45_Phy$N)]
+top_SILVA45_Phy <- slice_tail(top_SILVA45_Phy, n=20)
+top_SILVA45_Phy <- as.vector(tail(top_SILVA45_Phy$V1,20))
+top_SILVA45_Phy #Vector containing top 20
+
+top_SILVA68_Phy<- as.data.table(table(SILVA68_Full$Phylum)) #count by Phylum.
+top_SILVA68_Phy<- top_SILVA68_Phy[order(top_SILVA68_Phy$N)]
+top_SILVA68_Phy <- slice_tail(top_SILVA68_Phy, n=20)
+top_SILVA68_Phy <- as.vector(tail(top_SILVA68_Phy$V1,20))
+top_SILVA68_Phy #Vector containing top 20
+
+top_GG45_Phy<- as.data.table(table(GG45_Full$Phylum)) #count by Phylum.
+top_GG45_Phy<- top_GG45_Phy[order(top_GG45_Phy$N)]
+top_GG45_Phy <- slice_tail(top_GG45_Phy, n=20)
+top_GG45_Phy #Vector containing top 20
+
+top_GG68_Phy<- as.data.table(table(GG68_Full$Phylum)) #count by Phylum.
+top_GG68_Phy<- top_GG68_Phy[order(top_GG68_Phy$N)]
+top_GG68_Phy <- slice_tail(top_GG68_Phy, n=20)
+top_GG68_Phy <- as.vector(tail(top_GG68_Phy$V1,20))
+top_GG68_Phy #Vector containing top 20
+
+top_RDP45_Phy<- as.data.table(table(RDP45_Full$Phylum)) #count by Phylum.
+top_RDP45_Phy<- top_RDP45_Phy[order(top_RDP45_Phy$N)]
+top_RDP45_Phy <- slice_tail(top_RDP45_Phy, n=20)
+top_RDP45_Phy <- as.vector(tail(top_RDP45_Phy$V1,20))
+top_RDP45_Phy #Vector containing top 20
+
+top_RDP68_Phy<- as.data.table(table(RDP68_Full$Phylum)) #count by Phylum.
+top_RDP68_Phy<- top_RDP68_Phy[order(top_RDP68_Phy$N)]
+top_RDP68_Phy <- slice_tail(top_RDP68_Phy, n=20)
+top_RDP68_Phy <- as.vector(tail(top_RDP68_Phy$V1,20))
+top_RDP68_Phy #Vector containing top 20
+
+#Calculate proportion
+# P_SIL_45<-top_SILVA45_Phy[,-1]
+# totu<-t(P_SIL_45)
+# x<-totu/rowSums(totu)
+# x<-na.omit(x)
+# propPhy_SIL_45<-t(x)
+# propPhy_SIL_45 <- as.data.frame(propPhy_SIL_45)
+# propPhy_SIL_45$Phyla <- top_SILVA45_Phy
+
+#Filter results
+top20_SILVA45_Phy <- SILVA45_Full %>% filter(Phylum == top_SILVA45_Phy) #Filter for only the ones with the names of the top 20 orders
+top20_SILVA68_Phy <- SILVA68_Full %>% filter(Phylum == top_SILVA68_Phy) #Filter for only the ones with the names of the top 20 orders
+
+top20_GG45_Phy <- GG45_Full %>% filter(Phylum == top_GG45_Phy) #Filter for only the ones with the names of the top 20 orders
+top20_GG68_Phy <- GG68_Full %>% filter(Phylum == top_GG68_Phy) #Filter for only the ones with the names of the top 20 orders
+
+top20_RDP45_Phy <- RDP45_Full %>% filter(Phylum == top_RDP45_Phy) #Filter for only the ones with the names of the top 20 orders
+top20_RDP68_Phy <- RDP68_Full %>% filter(Phylum == top_RDP68_Phy) #Filter for only the ones with the names of the top 20 orders
+
+
+
+colourAssign = c("Lentisphaerae"="darkviolet","Nitrospirae"="maroon3","Nanoarchaeaeota"="paleturquoise4","Armatimonadetes"="seagreen4","Gemmatimonadetes"="orangered2", "Chloroflexi"="orange3","Nitrospinae"="royalblue3","Patescibacteria"="violetred","Marinimicrobia (SAR406 clade)"="deepskyblue1","Firmicutes"="brown3", "Euryarchaeota"="darkcyan","Acidobacteria"="firebrick3","Verrucomicrobia"="gray46", "Thaumarchaeota"="mediumseagreen", " "="mediumpurple2", "Actinobacteria"="goldenrod1", "Planctomycetes"="orchid4", "Cyanobacteria"="darkslategrey", "Bacteroidetes"="mediumpurple1","Proteobacteria"="salmon1")
+
+
+S45 <- ggplot(top20_SILVA45_Phy,aes(x=i.SAMPLE_NAME, y=Counts, fill=Phylum)) +
+ggtitle("Top 20 Phyla from SILVA in samples sequenced by V4-V5 region")+ # for the main title
+geom_bar(stat="identity", position="fill")+ scale_fill_manual(values=colourAssign)+theme_bw()+
+theme(axis.text.x= element_text(angle = 45, hjust = 1, size=7)) +guides(fill=guide_legend(title="Order"))+ylab(label="Relative abundance")
+
+S45
+
+S68 <- ggplot(top20_SILVA68_Phy,aes(x=i.SAMPLE_NAME, y=Counts, fill=Phylum)) +
+ggtitle("Top 20 Orders from SILVA in samples sequenced by V6-V8 region")+ # for the main title
+geom_bar(stat="identity", position="fill")+ scale_fill_manual(values=colourAssign_phy)+theme_bw()+
+theme(axis.text.x= element_text(angle = 45, hjust = 1, size=7)) +guides(fill=guide_legend(title="Order"))+ylab(label="Relative abundance")
+
+S68
+
+#Old method
+# 
+# S45 <- ggplot(top20_SILVA45_Phy, aes(x = i.SAMPLE_NAME, y = Counts, fill = Phylum)) + geom_bar(position = "fill", stat = "identity")
+#     ggplot(top20_SILVA45_Phy, aes(fill=Counts, y=1, x=1)) + 
+#     ggtitle("Top 20 Phyla from SILVA in samples sequenced by V4-V5 region")+ # for the main title
+#     geom_bar(position="fill", stat="identity") + expand_limits(y = 9, x=-9)  # or some other arbitrarily large number
+# S45
+# 
+# 
+# S68 <- ggplot(top20_SILVA68_Phy, aes(x = Counts, y = i.SAMPLE_NAME, fill = Phylum)) + geom_bar(position = "fill", stat = "identity")
+#     ggplot(top20_SILVA68_Phy, aes(fill=Counts, y=1, x=1)) + 
+#     ggtitle("Top 20 Orders from SILVA in samples sequenced by V6-V8 region")+ # for the main title
+#     geom_bar(position="fill", stat="identity") + expand_limits(y = 9, x=-9)  # or some other arbitrarily large number
+# S68
+# 
+# 
+# GG45 <- ggplot(top20_GG45_Phy, aes(x = Counts, y = i.SAMPLE_NAME, fill = Phylum)) + geom_bar(position = "fill", stat = "identity")
+#     ggplot(top20_GG45_Phy, aes(fill=Counts, y=1, x=1)) + 
+#     ggtitle("Top 20 Orders from GreenGenes in samples sequenced by V4-V5 region")+ # for the main title
+#     geom_bar(position="fill", stat="identity") + expand_limits(y = 9, x=-9)  # or some other arbitrarily large number
+# GG45
+# 
+# 
+# GG68 <- ggplot(top20_GG68_Phy, aes(x = Counts, y = i.SAMPLE_NAME, fill = Phylum)) + geom_bar(position = "fill", stat = "identity")
+#     ggplot(top20_GG68_Phy, aes(fill=Counts, y=1, x=1)) + 
+#     ggtitle("Top 20 Orders from GreenGenes in samples sequenced by V6-V8 region")+ # for the main title
+#     geom_bar(position="fill", stat="identity") + expand_limits(y = 9, x=-9)  # or some other arbitrarily large number
+# GG68
+# 
+# 
+# RDP45 <- ggplot(top20_RDP45_Phy, aes(x = Counts, y = i.SAMPLE_NAME, fill = Phylum)) + geom_bar(position = "fill", stat = "identity")
+#     ggplot(top20_RDP45_Phy, aes(fill=Counts, y=1, x=1)) + 
+#     ggtitle("Top 20 Orders from GreenGenes in samples sequenced by V6-V8 region")+ # for the main title
+#     geom_bar(position="fill", stat="identity") + expand_limits(y = 9, x=-9)  # or some other arbitrarily large number
+# RDP45
+# 
+# 
+# RDP68 <- ggplot(top20_RDP68_Phy, aes(x = Counts, y = i.SAMPLE_NAME, fill = Phylum)) + geom_bar(position = "fill", stat = "identity")
+#     ggplot(top20_RDP68_Phy, aes(fill=Counts, y=1, x=1)) + 
+#     ggtitle("Top 20 Orders from GreenGenes in samples sequenced by V6-V8 region")+ # for the main title
+#     geom_bar(position="fill", stat="identity") + expand_limits(y = 9, x=-9)  # or some other arbitrarily large number
+# RDP68
+
+
+
+colourAssign_phy = c("Lentisphaerae"="darkviolet","Nitrospirae"="maroon3","Nanoarchaeaeota"="paleturquoise4","Armatimonadetes"="seagreen4","Gemmatimonadetes"="orangered2", "Chloroflexi"="orange3","Nitrospinae"="royalblue3","Patescibacteria"="violetred","Marinimicrobia (SAR406 clade)"="deepskyblue1","Firmicutes"="brown3", "Euryarchaeota"="darkcyan","Acidobacteria"="firebrick3","Verrucomicrobia"="gray46", "Thaumarchaeota"="mediumseagreen", " "="mediumpurple2", "Actinobacteria"="goldenrod1", "Planctomycetes"="orchid4", "Cyanobacteria"="darkslategrey", "Bacteroidetes"="mediumpurple1","Proteobacteria"="salmon1", "Chlamydiae"="linen", "Dependentiae"="darkturquoise", "Epsilonbacteraeota"="wheat2")
+
+
+
+```
+```{r}
+#Check the amount that cannot be identified in the different databases
+
+#Sort out the counts of Phyla
+phylumCount45_GG<- as.data.table(table(GG45_Full$Phylum)) #count by Phylum.
+phylumCount45_GG<- phylumCount45_GG[order(phylumCount45_GG$N)]
+phylumCount45_GG #V1 is the Phylum name, N is the count.
+
+sumPhyCount45_GG <- sum(phylumCount45_GG$N) #Sum all the counts
+
+undefProp45_GG <- 19378/sumPhyCount45_GG #Value manually found by looking at output
+undefProp45_GG #Result: 98.67604% of phyla are not defined with V4-V5k primer.
+
+
+#Sort out the counts of Phyla
+phylumCount68_GG<- as.data.table(table(GG68_Full$Phylum)) #count by Phylum.
+phylumCount68_GG<- phylumCount68_GG[order(phylumCount68_GG$N)]
+phylumCount68_GG #V1 is the Phylum name, N is the count.
+
+sumPhyCount68_GG <- sum(phylumCount68_GG$N) #Sum all the counts
+
+undefProp68_GG <- 9846/sumPhyCount68_GG #Value manually found by looking at output
+undefProp68_GG #Result: 98.83558% of phyla are not defined with V6-V8 primer.
+```
+
+
+
+
+
+
+
+
+
+```{r}
+#Abundance of Chloroplasts and SAR11
+
+#SILVA
+(SILVA45_Full)
+(SILVA68_Full)
+#RDP
+(RDP45_Full)
+(RDP68_Full)
+#GreenGenes
+(GG45_Full)
+(GG68_Full)
+
+### Chloroplasts ###
+#V4 V5
+chloro_SILVA45 <- SILVA45_Full %>% filter(Order == "Chloroplast") #Filter for only chloroplasts
+chloroSum45_SILVA <- sum(chloro_SILVA45$Counts)
+chloroSum45_SILVA #this is the number of sequences associated with chloroplasts by V4V5
+
+S45 <- ggplot(chloro_SILVA45, aes(x = Counts, y = i.SAMPLE_NAME)) + geom_bar(stat = "identity")
+    geom_bar(stat="identity",position = position_dodge(width=1.5))
+S45
+
+
+chloro_RDP45 <- RDP45_Full %>% filter(Order == "Chloroplast") #Filter for only chloroplasts
+chloroSum45_RDP <- sum(chloro_RDP45$Counts)
+chloroSum45_RDP #this is the number of sequences associated with chloroplasts by V4V5
+
+R45 <- ggplot(chloro_RDP45, aes(x = Counts, y = i.SAMPLE_NAME)) + geom_bar(stat = "identity")
+    geom_bar(stat="identity",position = position_dodge(width=1.5))
+R45
+
+
+### CHANGED GG TO CLASS
+chloro_GG45 <- GG45_Full %>% filter(Class == "Chloroplast") #Filter for only chloroplasts
+chloroSum45_GG <- sum(chloro_GG45$Counts)
+chloroSum45_GG #this is the number of sequences associated with chloroplasts by V4V5
+
+G45 <- ggplot(chloro_GG45, aes(x = Counts, y = i.SAMPLE_NAME)) + geom_bar(stat = "identity")
+    geom_bar(stat="identity",position = position_dodge(width=1.5))
+G45
+
+
+#V6 V8
+chloro_RDP68 <- RDP68_Full %>% filter(Order == "Chloroplast") #Filter for only chloroplasts
+chloroSum68_RDP <- sum(chloro_RDP68$Counts)
+chloroSum68_RDP #this is the number of sequences associated with chloroplasts by V4V5
+
+R68 <- ggplot(chloro_RDP68, aes(x = Counts, y = i.SAMPLE_NAME)) + geom_bar(stat = "identity")
+    geom_bar(stat="identity",position = position_dodge(width=1.5))
+R68
+
+### CHANGED GG TO CLASS
+chloro_GG68 <- GG68_Full %>% filter(Class == "Chloroplast") #Filter for only chloroplasts
+chloroSum68_GG <- sum(chloro_GG68$Counts)
+chloroSum68_GG #this is the number of sequences associated with chloroplasts by V4V5
+
+G68 <- ggplot(chloro_GG68, aes(x = Counts, y = i.SAMPLE_NAME)) + geom_bar(stat = "identity")
+    geom_bar(stat="identity",position = position_dodge(width=1.5))
+G68
+
+
+chloro_SILVA68 <- SILVA68_Full %>% filter(Order == "Chloroplast") #Filter for only chloroplasts
+chloroSum68_SILVA <- sum(chloro_SILVA68$Counts)
+chloroSum68_SILVA #this is the number of sequences associated with chloroplasts by V4V5
+
+S68 <- ggplot(chloro_SILVA68, aes(x = Counts, y = i.SAMPLE_NAME)) + geom_bar(stat = "identity")
+    geom_bar(stat="identity",position = position_dodge(width=1.5))
+S68
+
+
+
+### SAR11 ###
+#V4 V5
+SAR_SILVA45 <- SILVA45_Full %>% filter(Order == "SAR11 clade") #Filter for only SARplasts
+SARSum45_SILVA <- sum(SAR_SILVA45$Counts)
+SARSum45_SILVA #this is the number of sequences associated with SARplasts by V4V5
+
+S45 <- ggplot(SAR_SILVA45, aes(x = Counts, y = i.SAMPLE_NAME)) + geom_bar(stat = "identity")
+    geom_bar(stat="identity",position = position_dodge(width=1.5))
+S45
+
+
+SAR_RDP45 <- RDP45_Full %>% filter(Order == "SAR11") #Filter for only SARplasts
+SARSum45_RDP <- sum(SAR_RDP45$Counts)
+SARSum45_RDP #this is the number of sequences associated with SARplasts by V4V5
+
+R45 <- ggplot(SAR_RDP45, aes(x = Counts, y = i.SAMPLE_NAME)) + geom_bar(stat = "identity")
+    geom_bar(stat="identity",position = position_dodge(width=1.5))
+R45
+
+
+SAR_GG45 <- GG45_Full %>% filter(Order == "SAR11") #Filter for only SARplasts
+SARSum45_GG <- sum(SAR_GG45$Counts)
+SARSum45_GG #this is the number of sequences associated with SARplasts by V4V5
+
+G45 <- ggplot(SAR_GG45, aes(x = Counts, y = i.SAMPLE_NAME)) + geom_bar(stat = "identity")
+    geom_bar(stat="identity",position = position_dodge(width=1.5))
+G45
+
+
+#V6 V8
+SAR_RDP68 <- RDP68_Full %>% filter(Order == "SAR11") #Filter for only SARplasts
+SARSum68_RDP <- sum(SAR_RDP68$Counts)
+SARSum68_RDP #this is the number of sequences associated with SARplasts by V4V5
+
+R68 <- ggplot(SAR_RDP68, aes(x = Counts, y = i.SAMPLE_NAME)) + geom_bar(stat = "identity")
+    geom_bar(stat="identity",position = position_dodge(width=1.5))
+R68
+
+
+SAR_GG68 <- GG68_Full %>% filter(Order == "SAR11") #Filter for only SARplasts
+SARSum68_GG <- sum(SAR_GG68$Counts)
+SARSum68_GG #this is the number of sequences associated with SARplasts by V4V5
+
+G68 <- ggplot(SAR_GG68, aes(x = Counts, y = i.SAMPLE_NAME)) + geom_bar(stat = "identity")
+    geom_bar(stat="identity",position = position_dodge(width=1.5))
+G68
+
+
+SAR_SILVA68 <- SILVA68_Full %>% filter(Order == "SAR11 clade") #Filter for only SARplasts
+SARSum68_SILVA <- sum(SAR_SILVA68$Counts)
+SARSum68_SILVA #this is the number of sequences associated with SARplasts by V4V5
+
+S68 <- ggplot(SAR_SILVA68, aes(x = Counts, y = i.SAMPLE_NAME)) + geom_bar(stat = "identity")
+    geom_bar(stat="identity",position = position_dodge(width=1.5))
+S68
+
+
+```
+
+
+
+```{r}
+#Maria's Alpha Diversity Recipe
+
+#' Version 1.3
+#' Last modified on 22/02/2016
+#' Script Task: Calculate alpha-diversity
+#' Author: Ilias Lagkouvardos
+#'
+
+#' For meaningful species richness, use of normalized sequence counts is expected.
+#' For richness calculation, only OTUs that are above 0.5 normalized counts are considered.
+
+
+
+##################################################################################
+
+######             Set parameters in this section manually                  ######
+
+##################################################################################
+
+
+
+#' Please set the directory of the script as working folder (e.g D:/MyStudy/NGS/Rhea/alpha-diversity)
+#' Note: the path is denoted by forward slash "/"
+
+
+######                  NO CHANGES ARE NEEDED BELOW THIS LINE               ######
+
+##################################################################################
+
+######                        Diversity Functions                           ###### 
+
+##################################################################################
+
+
+
+# Calculate the species richness in a sample
+
+Species.richness <- function(x)
+
+{
+
+  # Count only the OTUs that are present >0.5 normalized counts (normalization produces real values for counts)
+
+  count=sum(x[x>0.5]^0)
+
+  return(count)
+
+}
+
+
+# Calculate the Shannon diversity index
+
+Shannon.entropy <- function(x)
+
+{
+
+  total=sum(x)
+
+  se=-sum(x[x>0]/total*log(x[x>0]/total))
+
+  return(se)
+
+}
+
+
+
+# Calculate the effective number of species for Shannon
+
+Shannon.effective <- function(x)
+
+{
+
+  total=sum(x)
+
+  se=round(exp(-sum(x[x>0]/total*log(x[x>0]/total))),digits =2)
+
+  return(se)
+
+}
+
+
+
+# Calculate the Simpson diversity index
+
+Simpson.concentration <- function(x)
+
+{
+
+  total=sum(x)
+
+  si=sum((x[x>0]/total)^2)
+
+  return(si)
+
+}
+
+
+
+# Calculate the effective number of species for Simpson
+
+Simpson.effective <- function(x)
+
+{
+
+  total=sum(x)
+
+  si=round(1/sum((x[x>0]/total)^2),digits =2)
+
+  return(si)
+
+}
+
+
+
+##################################################################################
+
+######                             Main Script                              ###### 
+
+##################################################################################
+
+
+
+# Read a normalized OTU-table without taxonomy  
+
+# otu_table <- read.table (file_name, 
+# 
+#                        check.names = FALSE, 
+# 
+#                        header=TRUE, 
+# 
+#                        dec=".", 
+# 
+#                        sep = "\t",
+# 
+#                        row.names = 1)
+
+
+otu45<- read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/V4V5/V4V5__ASV_table.csv", row.names=1) #,row.names=1  header = T
+otu68<- read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/V6V8/V6V8__ASV_table.csv", row.names=1)
+head(otu45) 
+head(otu68)
+
+otu_table45 <- otu45
+otu_table68 <- otu68
+
+# Clean table from empty lines
+#otu_table <- otu_table[!apply(is.na(otu_table) | otu_table=="",1,all),]
+
+# Order and transpose OTU-table
+
+my_otu_table45 <- otu_table45[,order(names(otu_table45))] 
+my_otu_table45 <-data.frame(t(my_otu_table45))
+
+my_otu_table68 <- otu_table68[,order(names(otu_table68))] 
+my_otu_table68 <-data.frame(t(my_otu_table68))
+
+
+# Apply diversity functions to table
+otus_div_stats45<-data.frame(my_otu_table45[,0])
+otus_div_stats68<-data.frame(my_otu_table68[,0])
+
+sampleNames<-c("VIO_33_15m","VIO_2_5m","VIO_33_50m","VIO_33_200m","VIO_2_10m","VIO_32_125m","VIO_30_47m","VIO_31_40m","VIO_24_17m","VIO_28_4m","VIO_32_350m","VIO_31_67m","VIO_28_12m","VIO_22_7m","VIO_13_5m","VIO_13_20m","VIO_22_20m","VIO_22_115m","VIO_13_140m","VIO_6_5m","VIO_7_5m","VIO_9_surface","VIO_7_27m","VIO_10_95m","Ter_122","VIO_39_7m","VIO_44_145m")
+
+otus_div_stats45$sampleNames <- sampleNames
+otus_div_stats45$Richness<-apply(my_otu_table45,1,Species.richness)
+otus_div_stats45$Shannon<-apply(my_otu_table45,1,Shannon.entropy)
+otus_div_stats45$Shannon.effective<-apply(my_otu_table45,1,Shannon.effective)
+otus_div_stats45$Simpson<-apply(my_otu_table45,1,Simpson.concentration)
+otus_div_stats45$Simpson.effective<-apply(my_otu_table45,1,Simpson.effective)
+
+otus_div_stats68$sampleNames <- sampleNames
+otus_div_stats68$Richness<-apply(my_otu_table68,1,Species.richness)
+otus_div_stats68$Shannon<-apply(my_otu_table68,1,Shannon.entropy)
+otus_div_stats68$Shannon.effective<-apply(my_otu_table68,1,Shannon.effective)
+otus_div_stats68$Simpson<-apply(my_otu_table68,1,Simpson.concentration)
+otus_div_stats68$Simpson.effective<-apply(my_otu_table68,1,Simpson.effective)
+
+
+
+
+# Write the results in a file and copy in directory "Serial-Group-Comparisons" if existing
+
+#Save output
+#write.table(otus_div_stats, "G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/V4V5/alpha-diversity.tab", sep="\t", col.names=NA, quote=FALSE)
+#write.table(otus_div_stats, "G:/Desktop/Folders/Edu/2] EAS/Thesis/Real_Content/Data_Files/V6V8/alpha-diversity.tab", sep="\t", col.names=NA, quote=FALSE)
+
+#suppressWarnings (try(write.table(otus_div_stats[c(1,3,5)], "../5.Serial-Group-Comparisons/alpha-diversity.tab", sep = "\t",col.names = NA, quote = FALSE), silent =TRUE))
+
+
+
+##################################################################################
+
+######                          End of Script                               ###### 
+
+##################################################################################
+
+#summary stats
+mean(otus_div_stats45$Richness)
+mean(otus_div_stats45$Shannon)
+mean(otus_div_stats45$Shannon.effective)
+mean(otus_div_stats45$Simpson)
+mean(otus_div_stats45$Simpson.effective)
+median(otus_div_stats45$Richness)
+median(otus_div_stats45$Shannon)
+median(otus_div_stats45$Shannon.effective)
+median(otus_div_stats45$Simpson)
+median(otus_div_stats45$Simpson.effective)
+
+mean(otus_div_stats68$Richness)
+mean(otus_div_stats68$Shannon)
+mean(otus_div_stats68$Shannon.effective)
+mean(otus_div_stats68$Simpson)
+mean(otus_div_stats68$Simpson.effective)
+median(otus_div_stats68$Richness)
+median(otus_div_stats68$Shannon)
+median(otus_div_stats68$Shannon.effective)
+median(otus_div_stats68$Simpson)
+median(otus_div_stats68$Simpson.effective)
+
+
+#Boxplot
+#http://www.sthda.com/english/wiki/ggplot2-box-plot-quick-start-guide-r-software-and-data-visualization
+
+#Combined table
+primer=rep(c("v45","v68"),each=27)
+
+otu_stats <- data.table()
+otu_stats <- rbind(otus_div_stats45, otus_div_stats68)
+otu_stats$primer <- primer
+otu_stats
+
+#Richness
+p <- ggplot(otu_stats, aes(x=primer, y=Richness, fill=primer)) + 
+  ggtitle("Comparison of relative abundance detected between V4-V5 and V6-V8 primers")+
+  theme(axis.text.x= element_text(angle = 45, hjust = 1, size=12)) +guides(fill=guide_legend(title="Order"))+ylab(label="Relative abundance")+
+  geom_boxplot(outlier.colour="black", outlier.shape=16,outlier.size=2, notch=FALSE)+
+  stat_summary(fun=mean, geom="point", shape=23, size=3)
+
+p
+
+#Shannon
+p <- ggplot(otu_stats, aes(x=primer, y=Shannon, fill=primer)) + 
+  ggtitle("Comparison of Shannon diversity detected between V4-V5 and V6-V8 primers")+
+  theme(axis.text.x= element_text(angle = 45, hjust = 1, size=12)) +guides(fill=guide_legend(title="Order"))+ylab(label="Relative abundance")+
+  geom_boxplot(outlier.colour="black", outlier.shape=16,outlier.size=2, notch=FALSE)+
+  stat_summary(fun=mean, geom="point", shape=23, size=3)
+
+p
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

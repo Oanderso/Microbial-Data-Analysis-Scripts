@@ -1,0 +1,214 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+```{r}
+library("qiime2R")
+library("tidyverse")
+library("dada2")
+library("biomformat")
+library('vegan')
+library('readr')
+```
+
+```{r}
+#TUTORIAL SOURCE: https://forum.qiime2.org/t/tutorial-integrating-qiime2-and-r-for-data-visualization-and-analysis-using-qiime2r/4121
+
+#devtools::install_github("jbisanz/qiime2R")
+library("qiime2R")
+library("tidyverse")
+library("dada2")
+library("biomformat")
+library('vegan')
+library('readr')
+
+SVs <- read_qza("G:/Desktop/Folders/Edu/2] EAS/Thesis/Example_Content/QIIME Data files Permafrost/demux-paired-end.qza", "G:/Desktop/Folders/Edu/2] EAS/Thesis/Example_Content/tempdir()", F )
+
+names(SVs)
+SVs$data[1:5,1:2]
+SVs$uuid
+SVs$type
+SVs$contents
+
+#This will show what it actually is.
+metadata<-read_q2metadata("G:/Desktop/Folders/Edu/2] EAS/Thesis/Example_Content/Metadata_perma.txt")
+head(metadata) # show top lines of metadata
+
+ASV_table <- read_qza("G:/Desktop/Folders/Edu/2] EAS/Thesis/Example_Content/QIIME Data files Permafrost/Perma-rep-seqs-stats.qza", "G:/Desktop/Folders/Edu/2] EAS/Thesis/Example_Content/tempdir()", F )
+head(ASV_table)
+
+core_metrics_results <- read_qza("G:/Desktop/Folders/Edu/2] EAS/Thesis/Example_Content/QIIME Data files Permafrost/core-metrics-results/visualization.qzv", "G:/Desktop/Folders/Edu/2] EAS/Thesis/Example_Content/tempdir()", F )
+
+#reads the metadata for the actual samples.
+metadata2<- read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Example_Content/all_OTU_NMDS.csv")
+head(metadata2)
+
+
+```
+
+
+```{r}
+#Data processing with taxmap
+#Tutorial: https://grunwaldlab.github.io/analysis_of_microbiome_community_data_in_r/03--parsing.html
+
+#Read OTU data
+otu_data  <- read_tsv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Example_Content/Perma_OTU_table.tsv")
+head(otu_data)
+
+#Read taxonomy data
+#Had to change the first row to this: OTUID	confidence  Kingdom	Phylum	Class	Order	Family	Genus	Species
+tax_data <- read_tsv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Example_Content/biom-taxonomy.tsv")
+head(tax_data)
+
+ 
+#combined the two tables into a new otu_data table
+library(dplyr) # Loads the dplyr package so we can use `left_join`
+tax_data$`OTUID` <- as.character(tax_data$`OTUID`) # Must be same type for join to work
+otu_data$`OTUID` <- as.character(otu_data$`OTUID`) # Must be same type for join to work
+otu_data <- left_join(otu_data, tax_data,
+                      by = c("OTUID" = "OTUID")) # identifies cols with shared IDs
+print(otu_data)
+
+#reads the metadata for the actual samples.
+sample_data <- read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Example_Content/all_OTU_NMDS.csv")
+head(sample_data )
+
+
+#make the classification match the cols
+head(otu_data$taxonomy, 10)
+library(taxa)
+obj <- parse_tax_data(otu_data,
+                      class_cols = "taxonomy", # The column in the input table
+                      class_sep = ";") # What each taxon is seperated by
+print(obj)
+
+#taxonomy data at last
+print(obj$data$tax_data)
+
+#Turns the taxonomy data into a neat, humanly readable format
+obj <- parse_tax_data(otu_data,
+                      class_cols = "taxonomy",
+                      class_sep = ";",
+                      class_regex = "^([a-z]{0,1})_{0,2}(.*)$",
+                      class_key = c("tax_rank" = "taxon_rank", "name" = "taxon_name"))
+
+head(taxon_names(obj))
+obj$data$class_data
+
+#Remove class_data column
+obj$data$class_data <- NULL
+#Rename tax_data to otu_counts.
+names(obj$data) <- "otu_counts"
+
+
+############### --- Final Object --- ############### --- 
+print(obj) #otu data as a taxmap object
+print(sample_data ) #metadata
+
+tm_data <- obj$data #data saved as a list variable
+
+
+
+```
+
+
+```{r}
+#Data processing with Pyloseq:https://vaulot.github.io/tutorials/Phyloseq_tutorial.html
+
+library("dplyr")     # To manipulate dataframes
+library("readxl")    # To read Excel files into R
+library("ggplot2")   # for high quality graphics
+library("BiocManager")
+library("phyloseq")    
+
+
+otu_mat <- read_tsv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Example_Content/Perma_OTU_table.tsv")
+tax_mat <- read_tsv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Example_Content/biom-taxonomy.tsv")
+samples_df  <- read.csv("G:/Desktop/Folders/Edu/2] EAS/Thesis/Example_Content/all_OTU_NMDS.csv")
+
+
+#assign row names
+row.names(otu_mat) <- otu_mat$OTUID
+row.names(tax_mat) <- tax_mat$OTUID
+row.names(samples_df) <- samples_df$Site
+
+#Transform into matrixes otu and tax tables (sample table can be left as data frame)
+otu_mat <- as.matrix(otu_mat)
+tax_mat <- as.matrix(tax_mat)
+
+head(otu_mat)
+
+#Transform to phyloseq objects
+class(otu_mat) <- "numeric" #NEED to convert to numeric in this way. Have to run whole chunk.
+
+OTU = otu_table(otu_mat, taxa_are_rows = TRUE)
+TAX = tax_table(tax_mat)
+samples = sample_data(samples_df)
+
+nrow(OTU)
+nrow(TAX)
+nrow(samples)
+
+#Convert phyloseq
+Perma <- phyloseq(OTU, TAX, samples)
+Perma
+
+
+
+
+```
+
+
+
+
+
+```{r}
+
+
+#Proportion plot between collection month and reasoning
+p <- ggplot(data = tm_data,
+            mapping = aes(x = taxon_id, fill = name))
+p + geom_bar(position = "fill")
+
+
+# NMDS
+library(ggplot2)
+radius <- sqrt(sample_data$Depth/pi)
+
+xx = ggplot(sample_data, aes(x = x, y = y)) + 
+    geom_point(aes(size = Depth, shape = Type, colour = Stage))+
+  
+    theme(axis.text.y = element_text(colour = "black", size = 12, face = "bold"), 
+    axis.text.x = element_text(colour = "black", face = "bold", size = 12), 
+    legend.text = element_text(size = 12, face ="bold", colour ="black"), 
+    legend.position = "right", axis.title.y = element_text(face = "bold", size = 14), 
+    axis.title.x = element_text(face = "bold", size = 14, colour = "black"), 
+    legend.title = element_text(size = 14, colour = "black", face = "bold"), 
+    panel.background = element_blank(), panel.border = element_rect(colour = "black", fill = NA, size = 1.2),
+    legend.key=element_blank()) + 
+    labs(x = "x", colour = "Stage", y = "y", shape = "Type")  
+ 
+xx
+
+
+#Different attempt
+radius <- sqrt(sample_data$Depth/pi)
+nmds = symbols(sample_data$x, sample_data$y, squares=radius, inches=0.3, bg="red", fg="white", xlab="x", ylab="y") + text(sample_data$x, sample_data$y, cex=0.5)
+
+
+```
+
+
+
+
